@@ -1,3 +1,8 @@
+//  Copyright Marcos Cambón-López 2025.
+
+// Distributed under the Mozilla Public License Version 2.0.
+//    (See accompanying file LICENSE or copy at
+//          https://www.mozilla.org/en-US/MPL/2.0/)
 
 #include <netdb.h>
 #include <unistd.h>
@@ -7,10 +12,9 @@
 #include <acpp-network/socket.h>
 
 
-namespace {
-    void log_error(const std::string& func) {
-        std::cerr << "[POSIX] Error in " << func << ": " << strerror(errno) << std::endl;
-    }
+
+void log_error(const std::string& func) {
+    std::cerr << "[POSIX] Error in " << func << ": " << strerror(errno) << std::endl;
 }
 
 namespace acpp::network {
@@ -39,5 +43,34 @@ socket_base& socket_base::operator=(socket_base&& other) noexcept {
     return *this;
 }
 
+int get_family(const IpAddress& addr) {
+    return std::visit([](auto&& arg) -> int {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, sockaddr_in>) {
+            return AF_INET;
+        } else if constexpr (std::is_same_v<T, sockaddr_in6>) {
+            return AF_INET6;
+        } else {
+            throw std::invalid_argument("Unknown address type");
+        }
+    }, addr);
+}
+int get_family(const UnixAddress& addr) {
+    return AF_UNIX;
+}
+
+const sockaddr& to_sockaddr(const IpAddress& addr) {
+    // return std::visit([](auto&& arg) -> sockaddr {
+    //     using T = std::decay_t<decltype(arg)>;
+    //     if constexpr (std::is_same_v<T, struct in_addr>) {
+    //         return *reinterpret_cast<sockaddr*>(&sa);
+    //     } else if constexpr (std::is_same_v<T, struct in6_addr>) {
+    //         return *reinterpret_cast<sockaddr*>(&sa);
+    //     } else {
+    //         throw std::invalid_argument("Unknown address type");
+    //     }
+    // }, addr);
+    return reinterpret_cast<const sockaddr&>(addr);
+}
 
 } //namespace acpp::network 

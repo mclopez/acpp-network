@@ -1,9 +1,16 @@
-#include <socket.h>
+//  Copyright Marcos Cambón-López 2025.
+
+// Distributed under the Mozilla Public License Version 2.0.
+//    (See accompanying file LICENSE or copy at
+//          https://www.mozilla.org/en-US/MPL/2.0/)
+
 #include <iostream>
+
+#include <acpp-network/socket.h>
 
 namespace acpp::network {
 
-
+/*
 bool socket::connect(const addres_type& ad) {
     if (!is_valid()) return false;
     
@@ -55,6 +62,74 @@ bool Socket::resolve_address() {
     // This private helper would contain the getaddrinfo logic, 
     // which is internal to the module.
     return true; 
+}
+
+
+stream_socket::stream_socket(int fd)    
+    : socket_ (fd) {
+}
+*/
+
+
+template<typename Address, int Protocol>
+stream_socket<Address, Protocol>::stream_socket(int fd):socket_(fd) {
+
+}
+
+
+template<typename Address, int Protocol>
+bool stream_socket<Address, Protocol>::connect(const address_type& adr) {
+    socket_.create_impl(get_family(adr), SOCK_STREAM, protocol);
+    return ::connect(socket_.fd(), &to_sockaddr(adr), sizeof(sockaddr)) == 0;
+}
+
+template<typename Address, int Protocol>
+size_t stream_socket<Address, Protocol>::send(const char* data, size_t len) {
+    return ::send(socket_.fd(), data, len, 0);
+}
+
+template<typename Address, int Protocol>
+size_t stream_socket<Address, Protocol>::receive(char* buffer, size_t len) {
+    return ::recv(socket_.fd(), buffer, len, 0);
+}
+
+template<typename Address, int Protocol>
+int stream_socket<Address, Protocol>::bind(const address_type& ad) {
+    if (!socket_.valid()) {
+        socket_.create_impl(get_family(ad), SOCK_STREAM, 0);
+    }
+    int res = ::bind(socket_.fd(), reinterpret_cast<const struct sockaddr*>(&ad), sizeof(sockaddr));
+    if (res < 0) {
+        log_error("bind");
+    }
+    return res;
+}
+
+template<typename Address, int Protocol>
+int stream_socket<Address, Protocol>::listen(int backlog) {
+    if (!socket_.valid()) {
+        std::cerr << "Socket not valid for listen" << std::endl;
+        return -1;
+    }
+    int res = ::listen(socket_.fd(), backlog);
+    if (res < 0) {
+        log_error("listen");
+    }
+    return res;
+}
+
+template<typename Address, int Protocol>
+stream_socket<Address, Protocol> stream_socket<Address, Protocol>::accept() {
+    if (!socket_.valid()) {
+        std::cerr << "Socket not valid for accept" << std::endl;
+        return stream_socket();
+    }
+    int client_fd = ::accept(socket_.fd(), nullptr, nullptr);
+    if (client_fd < 0) {
+        log_error("accept");
+        return stream_socket();
+    }
+    return stream_socket(client_fd);
 }
 
 

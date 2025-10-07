@@ -46,9 +46,9 @@ socket_base& socket_base::operator=(socket_base&& other) noexcept {
 int get_family(const IpAddress& addr) {
     return std::visit([](auto&& arg) -> int {
         using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, sockaddr_in>) {
+        if constexpr (std::is_same_v<T, ip4_sockaddress>) {
             return AF_INET;
-        } else if constexpr (std::is_same_v<T, sockaddr_in6>) {
+        } else if constexpr (std::is_same_v<T, ip6_sockaddress>) {
             return AF_INET6;
         } else {
             throw std::invalid_argument("Unknown address type");

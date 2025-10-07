@@ -98,7 +98,7 @@ int stream_socket<Address, Protocol>::bind(const address_type& ad) {
     if (!socket_.valid()) {
         socket_.create_impl(get_family(ad), SOCK_STREAM, 0);
     }
-    int res = ::bind(socket_.fd(), reinterpret_cast<const struct sockaddr*>(&ad), sizeof(sockaddr));
+    int res = ::bind(socket_.fd(), reinterpret_cast<const sockaddr*>(&ad), sizeof(sockaddr));
     if (res < 0) {
         log_error("bind");
     }

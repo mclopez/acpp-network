@@ -43,7 +43,7 @@ socket_base& socket_base::operator=(socket_base&& other) noexcept {
     return *this;
 }
 
-int get_family(const IpAddress& addr) {
+int get_family(const ip_socketaddress& addr) {
     return std::visit([](auto&& arg) -> int {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, ip4_sockaddress>) {
@@ -55,11 +55,25 @@ int get_family(const IpAddress& addr) {
         }
     }, addr);
 }
-int get_family(const UnixAddress& addr) {
+
+int get_family(const un_socketaddress& addr) {
     return AF_UNIX;
 }
 
-const sockaddr& to_sockaddr(const IpAddress& addr) {
+std::string to_string(const ip_socketaddress& addr) {
+    return std::visit([](auto&& arg) -> std::string {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, ip4_sockaddress>) {
+            return std::string(arg.ip() + ":" + std::to_string(arg.port()));
+        } else if constexpr (std::is_same_v<T, ip6_sockaddress>) {
+            return std::string(arg.ip() + ":" + std::to_string(arg.port()));
+        } else {
+            throw std::invalid_argument("Unknown address type");
+        }
+    }, addr);
+}
+
+const sockaddr& to_sockaddr(const ip_socketaddress& addr) {
     // return std::visit([](auto&& arg) -> sockaddr {
     //     using T = std::decay_t<decltype(arg)>;
     //     if constexpr (std::is_same_v<T, struct in_addr>) {
@@ -70,6 +84,7 @@ const sockaddr& to_sockaddr(const IpAddress& addr) {
     //         throw std::invalid_argument("Unknown address type");
     //     }
     // }, addr);
+    //TODO: better way??
     return reinterpret_cast<const sockaddr&>(addr);
 }
 

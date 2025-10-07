@@ -9,6 +9,8 @@
 #include <sys/socket.h> 
 #include <netinet/in.h> // For sockaddr_in structure
 #include <sys/un.h>    // For sockaddr_un structure
+#include <netdb.h>
+
 #include <variant>
 #include <stdexcept>
 #include <string>
@@ -64,6 +66,7 @@ private:
 #include <arpa/inet.h>
 
 struct ip4_sockaddress {
+    ip4_sockaddress() = default;
     ip4_sockaddress(const std::string& ip, in_port_t port) {  
         addr.sin_family = AF_INET;                 // IPv4
         //addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // Connect to localhost
@@ -74,7 +77,7 @@ struct ip4_sockaddress {
         addr.sin_port = htons(port);               // Port to connect to (converted to network byte order)
     }
     int family() const { return addr.sin_family; }
-    std::string ip(){
+    std::string ip()const {
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &addr.sin_addr, ip_str, sizeof(ip_str));
         return std::string(ip_str); 
@@ -86,6 +89,7 @@ struct ip4_sockaddress {
 };
 
 struct ip6_sockaddress {
+    ip6_sockaddress() = default;
     ip6_sockaddress(const std::string& ip, in_port_t port) {  
         std::memset(&addr, 0, sizeof(addr));
         addr.sin6_family = AF_INET6;                 // IPv4
@@ -101,7 +105,7 @@ struct ip6_sockaddress {
         addr.sin6_port = htons(port); 
     }
     int family() const { return addr.sin6_family; }
-    std::string ip(){
+    std::string ip() const {
         char ip_str[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET6, &addr.sin6_addr, ip_str, sizeof(ip_str));
         return std::string(ip_str); 
@@ -112,32 +116,17 @@ struct ip6_sockaddress {
     sockaddr_in6 addr;
 };
 
-using IpAddress = std::variant<ip4_sockaddress, ip6_sockaddress>;
+using ip_socketaddress = std::variant<ip4_sockaddress, ip6_sockaddress>;
+
+using un_socketaddress = std::variant<sockaddr_un>;
+
+int get_family(const ip_socketaddress& addr);
+int get_family(const un_socketaddress& addr);
+
+std::string to_string(const ip_socketaddress& addr);
 
 
-
-// class ip_address {
-// public:
-//     sockaddr_in& as_in() { 
-//         storage_.ss_family = AF_INET; 
-//         return reinterpret_cast<sockaddr_in&>(&storage_);
-//     }
-//     sockaddr_in6& as_in6() { 
-//         storage_.ss_family = AF_INET6; 
-//         sockaddr_in6* ipv6_addr = reinterpret_cast<sockaddr_in6*>(&storage_);
-//         return *ipv6_addr; 
-//     }
-//     int get_family() const { return storage_.ss_family; }
-// private:
-//     sockaddr_storage storage_;
-// };
-
-using UnixAddress = std::variant<sockaddr_un>;
-
-int get_family(const IpAddress& addr);
-int get_family(const UnixAddress& addr);
-
-const sockaddr& to_sockaddr(const IpAddress& addr);
+const sockaddr& to_sockaddr(const ip_socketaddress& addr);
 
 template<typename Address, int Protocol = 0>
 class stream_socket {
@@ -158,14 +147,16 @@ public:
     int listen(int backlog = 5);
     stream_socket accept();  
 
-// int bind(int socket, const struct sockaddr *address, socklen_t address_len);
-// int accept(int socket, struct sockaddr *restrict address, socklen_t *restrict address_len);
 
 private:
     socket_base socket_;
     bool resolve_address(); 
 };
 
+template<typename SocketAddress>
+using resolve_address_callback = std::function<void(SocketAddress& addr, bool& success)>;
 
+template<typename SocketAddress>
+void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<SocketAddress>&& callback);
 
 } // namespace acpp::network 

@@ -133,4 +133,53 @@ stream_socket<Address, Protocol> stream_socket<Address, Protocol>::accept() {
 }
 
 
+template<typename SocketAddress>
+void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<SocketAddress>&& callback) {
+    int                      sfd, s;
+    ssize_t                  nread;
+    struct addrinfo          hints;
+    struct addrinfo          *result, *rp;
+
+    std::unique_ptr<struct addrinfo, decltype(&freeaddrinfo)> ptrResult(nullptr, freeaddrinfo);
+
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+    hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
+    hints.ai_flags = 0;
+    hints.ai_protocol = 0;          /* Any protocol */
+
+    s = getaddrinfo(host.c_str(), service.c_str(), &hints, &result);
+    ptrResult.reset(result);// Ensure resources are freed
+    if (s != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+        exit(EXIT_FAILURE);
+    }
+
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+        bool success = false;
+        SocketAddress addr;
+        if (rp->ai_family == AF_INET) {
+            ip4_sockaddress add;
+            memcpy(&add.addr, rp->ai_addr, rp->ai_addr->sa_len);
+            addr = add; 
+        } else if (rp->ai_family == AF_INET6) {
+            ip6_sockaddress add;
+            memcpy(&add.addr, rp->ai_addr, rp->ai_addr->sa_len);
+            addr = add; 
+
+        } else {
+            // Unknown family
+            continue;
+        }
+
+        callback(addr, success);
+        if (success) {
+            // Use addr
+            break;
+        }
+    }   
+}
+
+
 } //namespace acpp::network 

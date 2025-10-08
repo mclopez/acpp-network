@@ -51,7 +51,8 @@ int get_family(const ip_socketaddress& addr) {
         } else if constexpr (std::is_same_v<T, ip6_sockaddress>) {
             return AF_INET6;
         } else {
-            throw std::invalid_argument("Unknown address type");
+            return AF_UNSPEC;
+            //throw std::invalid_argument("Unknown address type");
         }
     }, addr);
 }

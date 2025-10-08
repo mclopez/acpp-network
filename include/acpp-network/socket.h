@@ -132,6 +132,7 @@ template<typename Address, int Protocol = 0>
 class stream_socket {
 public:
     using address_type = Address;
+    constexpr static auto socket_type = SOCK_STREAM;
     constexpr static auto protocol = Protocol;
 
     stream_socket() = default;
@@ -150,13 +151,38 @@ public:
 
 private:
     socket_base socket_;
-    bool resolve_address(); 
 };
+
+
+template<typename Address, int Protocol = 0>
+class datagram_socket {
+public:
+    using address_type = Address;
+    constexpr static auto socket_type = SOCK_DGRAM;
+    constexpr static auto protocol = Protocol;
+
+    datagram_socket() = default;
+    datagram_socket(int fd);
+
+    ~datagram_socket()=default;
+
+    //bool connect(const address_type& ad);
+    size_t send_to(address_type& addr, const char* data, size_t len);
+    size_t recv_from(address_type& addr, char* buffer, size_t len );
+
+    int bind(const address_type& ad);
+
+private:
+    socket_base socket_;
+};
+
 
 template<typename SocketAddress>
 using resolve_address_callback = std::function<void(SocketAddress& addr, bool& success)>;
 
-template<typename SocketAddress>
-void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<SocketAddress>&& callback);
+//template<typename SocketAddress>
+//void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<SocketAddress>&& callback);
+template<typename Socket, typename Address = Socket::address_type>
+void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<Address>&& callback);
 
 } // namespace acpp::network 

@@ -133,8 +133,22 @@ stream_socket<Address, Protocol> stream_socket<Address, Protocol>::accept() {
 }
 
 
-template<typename SocketAddress>
-void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<SocketAddress>&& callback) {
+     
+template<typename Address, int Protocol>
+size_t datagram_socket<Address, Protocol>::send_to(address_type& addr, const char* data, size_t len) {
+    auto res = ::sendto(socket_.fd(), data, len, 0, reinterpret_cast<const sockaddr*>(&addr), sizeof(sockaddr));
+    return res;
+}
+
+template<typename Address, int Protocol>
+size_t datagram_socket<Address, Protocol>::recv_from(address_type& addr, char* data, size_t len) {
+    auto res = ::recvfrom(socket_.fd(), data, len, 0, reinterpret_cast<const sockaddr*>(&addr), sizeof(sockaddr));
+    return res;
+}
+
+
+template<typename Socket, typename Address>
+void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<Address>&& callback) {
     int                      sfd, s;
     ssize_t                  nread;
     struct addrinfo          hints;
@@ -142,10 +156,11 @@ void resolve_host(const std::string& host, const std::string& service, resolve_a
 
     std::unique_ptr<struct addrinfo, decltype(&freeaddrinfo)> ptrResult(nullptr, freeaddrinfo);
 
+    typename Socket::address_type addr;
 
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-    hints.ai_socktype = SOCK_DGRAM; /* Datagram socket */
+    hints.ai_family = get_family(addr); //AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+    hints.ai_socktype = Socket::socket_type; //SOCK_DGRAM; //TODO: make it configurable
     hints.ai_flags = 0;
     hints.ai_protocol = 0;          /* Any protocol */
 
@@ -158,7 +173,6 @@ void resolve_host(const std::string& host, const std::string& service, resolve_a
 
     for (rp = result; rp != NULL; rp = rp->ai_next) {
         bool success = false;
-        SocketAddress addr;
         if (rp->ai_family == AF_INET) {
             ip4_sockaddress add;
             memcpy(&add.addr, rp->ai_addr, rp->ai_addr->sa_len);

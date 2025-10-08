@@ -132,18 +132,90 @@ stream_socket<Address, Protocol> stream_socket<Address, Protocol>::accept() {
     return stream_socket(client_fd);
 }
 
+    
+
 
      
 template<typename Address, int Protocol>
-size_t datagram_socket<Address, Protocol>::send_to(address_type& addr, const char* data, size_t len) {
+size_t datagram_socket<Address, Protocol>::send_to(const address_type& addr, const char* data, size_t len) {
+    if (!socket_.valid()) {
+        socket_.create_impl(get_family(addr), socket_type, 0);
+    }
     auto res = ::sendto(socket_.fd(), data, len, 0, reinterpret_cast<const sockaddr*>(&addr), sizeof(sockaddr));
     return res;
 }
 
 template<typename Address, int Protocol>
 size_t datagram_socket<Address, Protocol>::recv_from(address_type& addr, char* data, size_t len) {
-    auto res = ::recvfrom(socket_.fd(), data, len, 0, reinterpret_cast<const sockaddr*>(&addr), sizeof(sockaddr));
+    if (!socket_.valid()) {
+        socket_.create_impl(get_family(addr), socket_type, 0);
+    }
+    sockaddr addr1;
+    memset(&addr1, 0, sizeof(addr1));
+    socklen_t len1 = sizeof(addr1);
+    auto res = ::recvfrom(socket_.fd(), data, len, 0, &addr1, &len1);
+    if (res < 0) {
+        log_error("recvfrom");
+        return 0;
+    }
+    if (res > 0) {
+        std::string family = (addr1.sa_family == AF_INET) ? "AF_INET" : (addr1.sa_family == AF_INET6) ? "AF_INET6" : "Other";
+        std::cout << "recv_from " <<  std::string(data, res) << " family: " << family <<  " len1: " << len1 << std::endl;
+    } else {
+        std::cout << "recv_from 0 bytes" << std::endl;
+    }    
+    try {
+        from_sockaddr(addr1, addr);
+    } catch (const std::exception& ex) {
+        std::cerr << "recv_from exception: " << ex.what() << std::endl;
+        return 0;
+    }
+    std::cout << "recv_from 2"  << std::endl;
     return res;
+}
+
+template<typename Address, int Protocol>
+int datagram_socket<Address, Protocol>::bind(const address_type& ad) {
+    if (!socket_.valid()) {
+        socket_.create_impl(get_family(ad), socket_type, 0);
+    }
+    int res = ::bind(socket_.fd(), reinterpret_cast<const sockaddr*>(&ad), sizeof(sockaddr));
+    if (res < 0) {
+        log_error("bind");
+    }
+    return res;
+}
+
+
+
+void from_sockaddr(const sockaddr& sa, ip4_sockaddress& out_addr) {
+    if (sa.sa_family != AF_INET) {
+        throw std::invalid_argument("Expected AF_INET sockaddr");
+    }
+    std::memcpy(&out_addr.addr, &sa, sizeof(sockaddr_in));
+}
+void from_sockaddr(const sockaddr& sa, ip6_sockaddress& out_addr) {
+    if (sa.sa_family != AF_INET6) {
+        throw std::invalid_argument("Expected AF_INET6 sockaddr");
+    }
+    std::memcpy(&out_addr.addr, &sa, sizeof(sockaddr_in6));
+}
+
+
+void from_sockaddr(const sockaddr& sa, ip_socketaddress& out_addr) {
+    if (sa.sa_family == AF_INET) {
+        ip4_sockaddress addr;
+        //std::memcpy(&addr.addr, &sa, sizeof(sockaddr_in));
+        from_sockaddr(sa, addr);
+        out_addr = addr;
+    } else if (sa.sa_family == AF_INET6) {
+        ip6_sockaddress addr;
+        //std::memcpy(&addr.addr, &sa, sizeof(sockaddr_in6));
+        from_sockaddr(sa, addr);
+        out_addr = addr;
+    } else {
+        throw std::invalid_argument("Unsupported sockaddr family");
+    }
 }
 
 
@@ -173,19 +245,20 @@ void resolve_host(const std::string& host, const std::string& service, resolve_a
 
     for (rp = result; rp != NULL; rp = rp->ai_next) {
         bool success = false;
-        if (rp->ai_family == AF_INET) {
-            ip4_sockaddress add;
-            memcpy(&add.addr, rp->ai_addr, rp->ai_addr->sa_len);
-            addr = add; 
-        } else if (rp->ai_family == AF_INET6) {
-            ip6_sockaddress add;
-            memcpy(&add.addr, rp->ai_addr, rp->ai_addr->sa_len);
-            addr = add; 
+        from_sockaddr(*rp->ai_addr, addr);
+        // if (rp->ai_family == AF_INET) {
+        //     ip4_sockaddress add;
+        //     memcpy(&add.addr, rp->ai_addr, rp->ai_addr->sa_len);
+        //     addr = add; 
+        // } else if (rp->ai_family == AF_INET6) {
+        //     ip6_sockaddress add;
+        //     memcpy(&add.addr, rp->ai_addr, rp->ai_addr->sa_len);
+        //     addr = add; 
 
-        } else {
-            // Unknown family
-            continue;
-        }
+        // } else {
+        //     // Unknown family
+        //     continue;
+        // }
 
         callback(addr, success);
         if (success) {

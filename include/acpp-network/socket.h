@@ -123,6 +123,10 @@ using un_socketaddress = std::variant<sockaddr_un>;
 int get_family(const ip_socketaddress& addr);
 int get_family(const un_socketaddress& addr);
 
+void from_sockaddr(const sockaddr& sa, ip4_sockaddress& out_addr);
+void from_sockaddr(const sockaddr& sa, ip6_sockaddress& out_addr);
+void from_sockaddr(const sockaddr& sa, ip_socketaddress& out_addr);
+
 std::string to_string(const ip_socketaddress& addr);
 
 
@@ -167,7 +171,7 @@ public:
     ~datagram_socket()=default;
 
     //bool connect(const address_type& ad);
-    size_t send_to(address_type& addr, const char* data, size_t len);
+    size_t send_to(const address_type& addr, const char* data, size_t len);
     size_t recv_from(address_type& addr, char* buffer, size_t len );
 
     int bind(const address_type& ad);
@@ -176,6 +180,8 @@ private:
     socket_base socket_;
 };
 
+using tpc_socket = stream_socket<ip_socketaddress>;
+using udp_socket = datagram_socket<ip_socketaddress>;
 
 template<typename SocketAddress>
 using resolve_address_callback = std::function<void(SocketAddress& addr, bool& success)>;

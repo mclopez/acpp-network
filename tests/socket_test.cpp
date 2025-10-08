@@ -108,34 +108,32 @@ TEST(SocketTests, udp_echo)
     using namespace acpp::network;
     std::cout << "Socket tests" << std::endl;
     std::thread server_th([](){
-        std::cout << "Socket tests th" << std::endl;
+        std::cout << "UDP socket tests th" << std::endl;
 
-        stream_socket<ip_socketaddress> server_socket;
-
-        ip_socketaddress adr = ip4_sockaddress("127.0.0.1", 6666);
-
-
-        server_socket.bind(adr);
-        server_socket.listen(5);
-        auto client_socket = server_socket.accept();
+        udp_socket socket;
+        udp_socket::address_type adr = ip4_sockaddress("127.0.0.1", 2000);
+        socket.bind(adr);
+        udp_socket::address_type client_adr;
         char buffer[1024];
-        ssize_t bytes_received = client_socket.receive(buffer, sizeof(buffer));
+        auto bytes_received = socket.recv_from(client_adr, buffer, sizeof(buffer)); 
+
         if (bytes_received > 0) {
             std::cout << "Server received: " << std::string(buffer, bytes_received) << std::endl;
-            client_socket.send(buffer, bytes_received); // Echo back
+            udp_socket client_socket;
+            client_socket.send_to(client_adr, buffer, bytes_received);
         }
     });
 
     std::thread client_th([](){
-        std::cout << "Socket tests client" << std::endl;
-        stream_socket<ip_socketaddress> socket;
-        ip_socketaddress adr = ip4_sockaddress("127.0.0.1", 6666);
+        std::cout << "UDP socket test client th" << std::endl;
+        udp_socket socket;
+        udp_socket::address_type adr = ip4_sockaddress("127.0.0.1", 2000);
 
-        socket.connect(adr);
         const char* msg = "Hello, Echo Server!";
-        socket.send(msg, strlen(msg));
+        socket.send_to(adr, msg, strlen(msg));
         char buffer[1024];
-        ssize_t bytes_received = socket.receive(buffer, sizeof(buffer));
+        udp_socket::address_type adr2;
+        ssize_t bytes_received = socket.recv_from(adr2, buffer, sizeof(buffer));
         if (bytes_received > 0) {
             std::string msg(buffer, bytes_received);
             std::cout << "Client received: " << msg << std::endl;

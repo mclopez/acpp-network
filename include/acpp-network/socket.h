@@ -14,6 +14,8 @@
 #include <variant>
 #include <stdexcept>
 #include <string>
+#include <functional>
+#include <cstring>
 
 void log_error(const std::string& msg);
 

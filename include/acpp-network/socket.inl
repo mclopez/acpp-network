@@ -107,6 +107,7 @@ int stream_socket<Address, Protocol>::bind(const address_type& ad) {
 
 template<typename Address, int Protocol>
 int stream_socket<Address, Protocol>::listen(int backlog) {
+    //TODO: fix check
     if (!socket_.valid()) {
         std::cerr << "Socket not valid for listen" << std::endl;
         return -1;
@@ -120,6 +121,7 @@ int stream_socket<Address, Protocol>::listen(int backlog) {
 
 template<typename Address, int Protocol>
 stream_socket<Address, Protocol> stream_socket<Address, Protocol>::accept() {
+    //TODO: fix check
     if (!socket_.valid()) {
         std::cerr << "Socket not valid for accept" << std::endl;
         return stream_socket();
@@ -132,10 +134,6 @@ stream_socket<Address, Protocol> stream_socket<Address, Protocol>::accept() {
     return stream_socket(client_fd);
 }
 
-    
-
-
-     
 template<typename Address, int Protocol>
 size_t datagram_socket<Address, Protocol>::send_to(const address_type& addr, const char* data, size_t len) {
     if (!socket_.valid()) {

@@ -1,0 +1,36 @@
+{
+    // The version of the task configuration
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Project (build.sh)",
+            "type": "shell",
+            // The command to execute (your script)
+            "command": "./build.sh", 
+            
+            // Arguments to pass to the script (optional)
+            "args": [
+                // "release" 
+            ],
+
+            // Set this as the default build task
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            
+            // Tells VS Code how to process the script's output
+            "problemMatcher": [
+                "$gcc" // Use the built-in GCC/Clang problem matcher for error highlighting
+            ],
+            
+            // Set the working directory to the root of the project
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            
+            // Use Ctrl+Shift+B (Cmd+Shift+B on Mac) to run this task
+            "detail": "Runs the custom build script in the project root."
+        }
+    ]
+}

@@ -8,12 +8,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 add_executable(acpp-network-tests
     main.cpp
-    socket_test.cpp
+    socket_tests.cpp
+    async_tests.cpp
 )
 
 target_include_directories(acpp-network-tests 
 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
 

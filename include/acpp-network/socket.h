@@ -13,6 +13,7 @@
 
 
 #ifdef _WIN32
+
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
@@ -20,6 +21,7 @@
 #pragma comment(lib, "Ws2_32.lib")
 #include <windows.h>
 #include <io.h>
+#include <mswsock.h>
 
 using in_port_t = decltype(sockaddr_in::sin_port);
 
@@ -51,7 +53,6 @@ template<int Family> class address;
 template<> struct address<PF_INET>  { using type = struct in_addr; };
 template<> struct address<PF_INET6> { using type = struct in6_addr; };
 template<> struct address<PF_UNIX>  { using type = struct iun_addr; };
-
 
 
 class socket_base {

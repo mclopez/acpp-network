@@ -16,19 +16,23 @@
 
 
 enum class operation_type {
-    read, write,
+    connect, read, write,
 };
 
-class async_operation {
+typedef struct  {
 public:    
     OVERLAPPED overlapped;
     SOCKET fd;
     WSABUF buf_info;
     char buffer[1024];
     operation_type op_type; 
-};
+}async_operation;
+
+
+class io_context;
 
 struct async_socket {
+    async_socket(io_context& io):io_(&io){}
 
     ~async_socket() {
         if (fd) {
@@ -82,6 +86,9 @@ struct async_socket {
         std::cout << "connect result: " << r << std::endl;
         return r;
     }
+    int connect2(const std::string& ip, int port);
+
+
 
     void start_write(std::string msg){
         write_op.fd = fd;
@@ -112,9 +119,10 @@ struct async_socket {
 
 
     SOCKET fd;
+    async_operation connect_op;
     async_operation read_op;
     async_operation write_op;
-
+    io_context* io_;
 };
 
 
@@ -148,41 +156,37 @@ public:
                 &lpOverlapped,
                 INFINITE // Wait indefinitely
             );
-            std::cout <<"process ...." << std::endl;
+            std::cout <<"***************************************** process ...." << std::endl;
 
             // The completionKey is our CLIENT_CONTEXT*
             async_socket* clientContext = (async_socket*)completionKey;
-            std::cout <<"process ...." << (void*)clientContext << std::endl;
+            std::cout <<"process ... socekt: " << (void*)clientContext << " op:" << (void*)lpOverlapped << std::endl;
             if (!clientContext) continue; // Should not happen
 
             // lpOverlapped points to our IO_CONTEXT::Overlapped member
             async_operation* ioContext = (async_operation*)lpOverlapped;
 
-            if (!success || (success && bytesTransferred == 0)) {
-                // Connection closed or error. Handle cleanup.
+            // if (!success || (success && bytesTransferred == 0)) {
+            //     // Connection closed or error. Handle cleanup.
 
-                //CleanupContext(clientContext, ioContext);
-                std::cout <<"continue ...." << std::endl;
-                continue;
-            }
+            //     //CleanupContext(clientContext, ioContext);
+            //     std::cout <<"continue ...." << std::endl;
+            //     continue;
+            // }
 
             // --- Process the Completed I/O Operation ---
-            if (ioContext->op_type == operation_type::read) {
-                // Echo the received data
-                //clientContext->start_write("");
-                
-                // Immediately start a new read operation
-                //clientContext->start_reading();
-                //ioContext->buffer 
-                //ioContext->
+            if (ioContext->op_type == operation_type::connect) {
+                std::cout << "*** async connected! "  << std::endl;
+                run = false;
+            }else if (ioContext->op_type == operation_type::read) {
                 std::string msg(ioContext->buf_info.buf, bytesTransferred);
-                std::cout << "read done! msg: " << msg << std::endl;
+                std::cout << "*** async read done! msg: " << msg << std::endl;
                 run = false;
 
             } else if (ioContext->op_type == operation_type::write) {
                 // Write completed, clean up this specific I/O context.
                 //delete ioContext; 
-                std::cout << "write done!" << std::endl;
+                std::cout << "*** async write done!" << std::endl;
             }
         }
         return;
@@ -197,26 +201,69 @@ public:
             (ULONG_PTR)&as,                    // CompletionKey (not used yet)
             0                     // NumberOfConcurrentThreads (0 uses system default)    
         );
-
-        // CreateIoCompletionPort(
-        //     (HANDLE)acceptSocket, // The new socket handle
-        //     g_hIOCP,              // The IOCP handle
-        //     (ULONG_PTR)clientContext, // The Completion Key (Client Context)
-        //     0
-        // );
-
-
         std::cout << "add_socket to coml port" << std::endl; 
-        // if (hIOCP_ == NULL) {
-        //     throw std::runtime_error("Error in CreateIoCompletionPort (2)");
-        // }
     }
-
+    void stop() {run = false;}
     std::atomic_bool run;
 private:
     HANDLE hIOCP_ = INVALID_HANDLE_VALUE;
 
 };
+
+
+    int async_socket::connect2(const std::string& ip, int port) {
+        sockaddr_in service;
+        service.sin_family = AF_INET;
+        int r = inet_pton(AF_INET, ip.c_str(), &service.sin_addr.s_addr);
+        if (r <= 0) {
+            throw std::invalid_argument("Invalid IP address format ****");
+        }
+
+        service.sin_port = htons(port);
+
+//        if (fd) ...
+        fd = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
+        std::cout << "connect2 fd: " << fd << std::endl;
+
+        SOCKADDR_IN localAddr = { 0 };
+        localAddr.sin_family = AF_INET;
+        localAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+        localAddr.sin_port = 0; // let system choose
+
+        bind(fd, (SOCKADDR*)&localAddr, sizeof(localAddr));
+
+
+        io_->add_socket(*this);
+
+        GUID guidConnectEx = WSAID_CONNECTEX;
+        DWORD bytesReturned = 0;
+        LPFN_CONNECTEX lpConnectEx = NULL;
+        
+        WSAIoctl(fd, SIO_GET_EXTENSION_FUNCTION_POINTER,
+            &guidConnectEx, sizeof(guidConnectEx),
+            &lpConnectEx, sizeof(lpConnectEx),
+            &bytesReturned, NULL, NULL);
+
+        if (lpConnectEx)    {
+            //OVERLAPPED overlapped = { 0 };
+            connect_op.op_type = operation_type::connect;
+
+            BOOL result = lpConnectEx(fd, (sockaddr*)&service, sizeof(sockaddr_in), NULL, 0, NULL, (LPOVERLAPPED)&(connect_op));
+
+            if (!result) {
+                int err = WSAGetLastError();
+                if (err != ERROR_IO_PENDING) {
+                    printf("ConnectEx failed: %d\n", err);
+                    closesocket(fd);
+                    return err;
+                }
+            }        
+            std::cout << "connect2 result: " << result << std::endl;
+        }
+        std::cout << "connect2 result: " << r << std::endl;
+        return r;
+    }
+
 
 TEST(AsyncSocketTests, first)
 {
@@ -262,18 +309,21 @@ TEST(AsyncSocketTests, first)
     std::thread client_th([port](){
         std::cout << "Socket tests client" << std::endl;
         io_context io;
-        async_socket socket;
-        socket.connect("127.0.0.1", port);
-        io.add_socket(socket);
+        async_socket socket(io);
+        std::cout << (void*) &socket.read_op << " " << (void*) &socket.write_op << " " << (void*) &socket.connect_op << std::endl;
+        socket.connect2("127.0.0.1", port);
+        //io.add_socket(socket);
         //socket.start_write();
         std::string msg("hola!");
         //::send(socket.fd, msg.c_str(), msg.size(), 0);
-        socket.start_write(msg);
-        socket.start_reading();
+        //socket.start_write(msg);
+        //socket.start_reading();
         io.wait_for_input();
 
+        std::cout << "Socket tests client end" << std::endl;
     });
-
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    //io.stop();
     if (server_th.joinable())
         server_th.join();
     if (client_th.joinable())

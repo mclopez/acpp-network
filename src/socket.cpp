@@ -87,6 +87,8 @@ socket_init::socket_init(){
         std::cerr << "WSAStartup failed with error: " << iResult << std::endl;
     }
     //TODO: throw exception??
+
+
 }
 
 socket_init::~socket_init(){
@@ -96,6 +98,9 @@ socket_init::~socket_init(){
 }
 
 socket_init init;
+
+
+
 
 #endif
 

@@ -14,9 +14,6 @@
 #include <iostream>
 #include <string>
 
-#ifdef _WIN32
-#include <windows.h> // Required for WSAGetLastError, FormatMessage, etc.
-#endif
 
 
 
@@ -119,19 +116,6 @@ namespace acpp::network {
 
 
 
-socket_base::socket_base(socket_base&& other) noexcept 
-    : fd_(other.fd_) {
-    other.fd_ = -1; // Steal the resource
-}
-
-socket_base& socket_base::operator=(socket_base&& other) noexcept {
-    if (this != &other) {
-        ::close(fd_); // Clean up current resource
-        fd_ = other.fd_;
-        other.fd_ = -1; // Steal the resource
-    }
-    return *this;
-}
 
 int get_family(const ip_socketaddress& addr) {
     return std::visit([](auto&& arg) -> int {

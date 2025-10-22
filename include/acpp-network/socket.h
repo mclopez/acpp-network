@@ -6,36 +6,7 @@
 
 #pragma once
 
-// #include <sys/socket.h> 
-// #include <netinet/in.h> // For sockaddr_in structure
-// #include <sys/un.h>    // For sockaddr_un structure
-// #include <netdb.h>
 
-
-#ifdef _WIN32
-
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <iphlpapi.h>
-#include <ws2def.h>
-#pragma comment(lib, "Ws2_32.lib")
-#include <windows.h>
-#include <io.h>
-#include <mswsock.h>
-
-using in_port_t = decltype(sockaddr_in::sin_port);
-
-#else
-
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <sys/un.h>    // For sockaddr_un structure
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-
-#endif
 
 
 #include <variant>
@@ -43,6 +14,9 @@ using in_port_t = decltype(sockaddr_in::sin_port);
 #include <string>
 #include <functional>
 #include <cstring>
+
+
+#include <acpp-network/socket_base.h>
 
 void log_error(const std::string& msg);
 
@@ -55,49 +29,6 @@ template<> struct address<PF_INET6> { using type = struct in6_addr; };
 template<> struct address<PF_UNIX>  { using type = struct iun_addr; };
 
 
-class socket_base {
-public:    
-    socket_base() = default;
-    socket_base(int fd):fd_(fd){}
-    ~socket_base() {
-        close();
-    }
-
-    socket_base(const socket_base&) = delete;
-    socket_base& operator=(const socket_base&) = delete;
-
-    socket_base(socket_base&& other) noexcept;
-    socket_base& operator=(socket_base&& other) noexcept;
-
-    void create_impl(int domain, int type, int protocol) {
-        if (valid())
-            close();
-        fd_ = ::socket(domain, type, protocol);
-    }
-
-    bool valid() const {return fd_ != invalid_fd;}
-
-    int fd() const { return fd_; }
-    void close() {
-        if (fd_ != invalid_fd) {
-#ifndef _WIN32            
-            ::close(fd_);
-#else            
-            ::shutdown(fd_, SD_SEND);
-            ::closesocket(fd_);
-#endif
-            fd_ = invalid_fd;
-        }
-    }
-
-private:
-#ifdef _WIN32            
-    constexpr static int invalid_fd = INVALID_SOCKET;
-#else            
-    constexpr static int invalid_fd = -1;
-#endif
-    int fd_ = invalid_fd; 
-};
 
 //using IpAddress = std::variant<struct in_addr, struct in6_addr>;
 //using IpAddress = std::variant<sockaddr_in, sockaddr_in6>;

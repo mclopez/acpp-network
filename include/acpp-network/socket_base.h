@@ -35,7 +35,6 @@ using in_port_t = decltype(sockaddr_in::sin_port);
 
 namespace acpp::network {
 
-struct socket_base_pimpl;
 
 class socket_base {
 public:    
@@ -49,22 +48,53 @@ public:
     socket_base(socket_base&& other) noexcept;
     socket_base& operator=(socket_base&& other) noexcept;
 
-    void create_impl(int domain, int type, int protocol, bool non_blocking = false);
+    void create_impl(int domain, int type, int protocol);
 
     bool connect(const sockaddr& ad);
 
 
     bool valid() const {return fd_ != invalid_fd;}
 
-    int fd() const { return fd_; }
+    int64_t fd() const { return fd_; }
     void close();
 
-private:
+protected:
     static const int invalid_fd;
-    int fd_ = invalid_fd; 
-    bool non_blocking_;
+    int64_t fd_ = invalid_fd; 
+};
+
+class io_context;
+struct socket_base_pimpl;
+
+class async_socket_base: public socket_base {
+public:
+    async_socket_base(io_context& io);
+    ~async_socket_base();
+    void create_impl(int domain, int type, int protocol);
+
+    bool connect(const sockaddr& adr);
+private:
+    io_context* io_;
     std::unique_ptr<socket_base_pimpl> pimpl_;
 };
+
+class io_context {
+public:
+    io_context();
+
+    void wait_for_input();
+    void remove_socket(socket_base& as);
+
+    void add_socket(socket_base& as);
+
+    void stop();
+
+private:
+    std::atomic_bool run;
+    HANDLE hIOCP_ = INVALID_HANDLE_VALUE;
+
+};
+
 
 
 void log_error(const std::string& func);

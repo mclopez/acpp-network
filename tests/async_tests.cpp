@@ -302,10 +302,11 @@ TEST(AsyncSocketTests, first)
 
     std::thread client_th([port](){
         std::cout << "Socket tests client" << std::endl;
-        io_context io;
-        async_socket socket(io);
-        std::cout << (void*) &socket.read_op << " " << (void*) &socket.write_op << " " << (void*) &socket.connect_op << std::endl;
-        socket.connect2("127.0.0.1", port);
+        acpp::network::io_context io;
+        async_socket_base socket(io);
+
+        //std::cout << (void*) &socket.read_op << " " << (void*) &socket.write_op << " " << (void*) &socket.connect_op << std::endl;
+        socket.connect(to_sockaddr(ip4_sockaddress("127.0.0.1", port)));
         //io.add_socket(socket);
         //socket.start_write();
         std::string msg("hola!");

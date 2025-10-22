@@ -87,6 +87,31 @@ template<typename Socket, typename Address = Socket::address_type>
 void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<Address>&& callback);
 
 
+template<typename Address, int Protocol = 0>
+class async_stream_socket {
+public:
+    using address_type = Address;
+    constexpr static auto socket_type = SOCK_STREAM;
+    constexpr static auto protocol = Protocol;
+
+    async_stream_socket() = default;
+    async_stream_socket(int fd);
+
+    ~async_stream_socket()=default;
+
+    bool connect(const address_type& adr);
+//    size_t send(const char* data, size_t len);
+//    size_t receive(char* buffer, size_t len);
+
+//    int bind(const address_type& ad);
+//    int listen(int backlog = 5);
+//    stream_socket accept();  
+
+
+private:
+    socket_base socket_;
+};
+
 
 
 

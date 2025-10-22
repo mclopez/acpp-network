@@ -8,6 +8,9 @@
 #include <acpp-network/socket_base.h>
 
 
+namespace acpp::network {
+
+
 const int socket_base::invalid_fd = -1;
 
 socket_base::socket_base(socket_base&& other) noexcept 
@@ -31,8 +34,16 @@ void socket_base::close() {
     }
 }
 
-void socket_base::create_impl(int domain, int type, int protocol) {
+void socket_base::create_impl(int domain, int type, int protocol, bool non_blocking) {
     if (valid())
         close();
+    non_blocking_ = non_blocking;    
     fd_ = ::socket(domain, type, protocol);
 }
+
+bool socket_base::connect(const ) {
+    return ::connect(socket_.fd(), &to_sockaddr(adr), sizeof(sockaddr)) == 0;
+}
+
+
+} //namespace acpp::network

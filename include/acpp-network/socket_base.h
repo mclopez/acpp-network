@@ -31,14 +31,17 @@ using in_port_t = decltype(sockaddr_in::sin_port);
 
 #endif
 
+#include <memory>
+
+namespace acpp::network {
+
+struct socket_base_pimpl;
 
 class socket_base {
 public:    
-    socket_base() = default;
-    socket_base(int fd):fd_(fd){}
-    ~socket_base() {
-        close();
-    }
+    socket_base();
+    socket_base(int fd);
+    ~socket_base();
 
     socket_base(const socket_base&) = delete;
     socket_base& operator=(const socket_base&) = delete;
@@ -46,7 +49,10 @@ public:
     socket_base(socket_base&& other) noexcept;
     socket_base& operator=(socket_base&& other) noexcept;
 
-    void create_impl(int domain, int type, int protocol);
+    void create_impl(int domain, int type, int protocol, bool non_blocking = false);
+
+    bool connect(const sockaddr& ad);
+
 
     bool valid() const {return fd_ != invalid_fd;}
 
@@ -56,4 +62,9 @@ public:
 private:
     static const int invalid_fd;
     int fd_ = invalid_fd; 
+    bool non_blocking_;
+    std::unique_ptr<socket_base_pimpl> pimpl_;
 };
+
+
+} //namespace acpp::network 

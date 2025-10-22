@@ -178,7 +178,7 @@ void async_socket_base::create_impl(int domain, int type, int protocol) {
 
 bool async_socket_base::connect(const sockaddr& adr) {
     if (!valid()) {
-        create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
     }
     SOCKADDR_IN localAddr = { 0 };
     localAddr.sin_family = AF_INET;

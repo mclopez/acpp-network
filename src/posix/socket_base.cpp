@@ -46,4 +46,13 @@ bool socket_base::connect(const ) {
 }
 
 
+void log_error(const std::string& func) {
+    std::string error;
+    error = strerror(errno);
+    std::cerr << "[POSIX] Error in " << func << ": " << error << std::endl;
+}
+
+
+
+
 } //namespace acpp::network

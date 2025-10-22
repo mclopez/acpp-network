@@ -67,4 +67,6 @@ private:
 };
 
 
+void log_error(const std::string& func);
+
 } //namespace acpp::network 

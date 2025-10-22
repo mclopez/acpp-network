@@ -86,4 +86,8 @@ using resolve_address_callback = std::function<void(SocketAddress& addr, bool& s
 template<typename Socket, typename Address = Socket::address_type>
 void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<Address>&& callback);
 
+
+
+
+
 } // namespace acpp::network 

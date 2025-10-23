@@ -303,7 +303,23 @@ TEST(AsyncSocketTests, first)
     std::thread client_th([port](){
         std::cout << "Socket tests client" << std::endl;
         acpp::network::io_context io;
-        async_socket_base socket(io);
+        async_socket_base socket(io, 
+            socket_callbacks{
+                .on_connected = [](async_socket_base& s) {
+                    std::cout << "Socket connected from AsyncSocketTests.first" << std::endl;
+                    std::string msg("hola");
+                    s.read();
+                    s.write(msg.c_str(), msg.size());
+                },
+                .on_received = [&](async_socket_base& s, const char* buf, size_t len){
+                    std::string msg(buf, len);
+                    std::cout << "Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
+                    io.stop();
+                },
+                .on_sent = [](async_socket_base& s){
+                    std::cout << "Socket sent from AsyncSocketTests.first" << std::endl;
+                }
+            });
 
         //std::cout << (void*) &socket.read_op << " " << (void*) &socket.write_op << " " << (void*) &socket.connect_op << std::endl;
         socket.connect(to_sockaddr(ip4_sockaddress("127.0.0.1", port)));

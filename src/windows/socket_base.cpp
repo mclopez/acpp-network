@@ -155,17 +155,39 @@ struct socket_base_pimpl {
 public:
     socket_base_pimpl()= default;
     async_operation connect_op;
+    async_operation read_op;
+    async_operation write_op;
 private:
 };
 
-async_socket_base::async_socket_base(io_context& io)
-:io_(&io) {
+const int async_socket_base::invalid_fd = INVALID_SOCKET;
+
+
+async_socket_base::async_socket_base(io_context& io, socket_callbacks&& callbacks)
+:io_(&io),callbacks_(std::move(callbacks)) {
 
 }
 
 async_socket_base::~async_socket_base() {
-
+    close();
 }
+
+async_socket_base::async_socket_base(async_socket_base&& other) noexcept 
+    : fd_(other.fd_) {
+    other.fd_ = -1; // Steal the resource
+}
+
+
+async_socket_base& async_socket_base::operator=(async_socket_base&& other) noexcept {
+    if (this != &other) {
+        ::close(fd_); // Clean up current resource
+        fd_ = other.fd_;
+        other.fd_ = -1; // Steal the resource
+    }
+    return *this;
+}
+
+
 
 void async_socket_base::create_impl(int domain, int type, int protocol) {
     if (valid())
@@ -173,6 +195,14 @@ void async_socket_base::create_impl(int domain, int type, int protocol) {
     fd_ = WSASocket(domain, type, protocol, NULL, 0, WSA_FLAG_OVERLAPPED);
     pimpl_ = std::make_unique<socket_base_pimpl>();
     io_->add_socket(*this);
+}
+
+void async_socket_base::close() {
+    if (fd_ != invalid_fd) {
+        ::shutdown(fd_, SD_SEND);
+        ::closesocket(fd_);
+        fd_ = invalid_fd;
+    }
 }
 
 
@@ -219,6 +249,70 @@ bool async_socket_base::connect(const sockaddr& adr) {
     return false;
 }
 
+
+void async_socket_base::read() {
+    auto& op = pimpl_->read_op;
+    op.fd = fd();
+    op.op_type = operation_type::read;
+    
+    // Set up the WSABUF
+    op.buf_info.buf = op.buffer;
+    op.buf_info.len = sizeof(op.buffer);
+
+    DWORD flags = 0;
+    DWORD bytes = 0;
+    
+    // WSARecv returns SOCKET_ERROR if the operation is pending (standard for IOCP)
+    if (WSARecv(fd(), 
+                &(op.buf_info), 
+                1, 
+                &bytes, 
+                &flags, 
+                (LPOVERLAPPED)&op, 
+                NULL) == SOCKET_ERROR) 
+    {
+        // Ignore WSA_IO_PENDING (997), which means the operation is running asynchronously
+        if (WSAGetLastError() != WSA_IO_PENDING) {
+            std::cerr << "WSARecv failed: " << WSAGetLastError() << std::endl;
+        }
+    }    
+}
+
+
+size_t async_socket_base::write(const char* buffer, size_t len) {
+    auto& op = pimpl_->write_op;
+    op.fd = fd();
+    op.op_type = operation_type::write;
+    
+    memcpy(op.buffer, buffer, len); //check buffer size!!
+    op.buf_info.buf = op.buffer;
+    op.buf_info.len = len; 
+
+    DWORD bytes = 0;
+    int res;
+    // WSASend returns SOCKET_ERROR if the operation is pending
+    res = WSASend(fd(), 
+                &(op.buf_info), 
+                1, 
+                &bytes, 
+                0, // flags
+                (LPOVERLAPPED)&op, 
+                NULL);
+                
+    if (res == 0) {
+        //synchronous call
+        std::cerr << "WSASend synchronous send" << std::endl;
+    } else if (res == SOCKET_ERROR) {
+        if (WSAGetLastError() != WSA_IO_PENDING) {
+            std::cerr << "WSASend failed: " << WSAGetLastError() << std::endl;
+            //CleanupContext(clientContext, writeContext);
+        }
+    }    
+    std::cout << "write res: " << res << std::endl;    
+    return 0;
+}
+
+
 io_context::io_context(){
     hIOCP_ = CreateIoCompletionPort(
         INVALID_HANDLE_VALUE, // FileHandle (null for creation)
@@ -250,42 +344,43 @@ void io_context::wait_for_input() {
         std::cout <<"***************************************** process ...." << std::endl;
 
         // The completionKey is our CLIENT_CONTEXT*
-        socket_base* clientContext = (socket_base*)completionKey;
-        std::cout <<"process ... socekt: " << (void*)clientContext << " op:" << (void*)lpOverlapped << std::endl;
-        if (!clientContext) continue; // Should not happen
+        async_socket_base* socket = (async_socket_base*)completionKey;
+        std::cout <<"process ... socekt: " << (void*)socket << " op:" << (void*)lpOverlapped << std::endl;
+        if (!socket) continue; // Should not happen
 
         // lpOverlapped points to our IO_CONTEXT::Overlapped member
-        async_operation* ioContext = (async_operation*)lpOverlapped;
+        async_operation* operation = (async_operation*)lpOverlapped;
 
-        // if (!success || (success && bytesTransferred == 0)) {
-        //     // Connection closed or error. Handle cleanup.
-
-        //     //CleanupContext(clientContext, ioContext);
-        //     std::cout <<"continue ...." << std::endl;
-        //     continue;
-        // }
 
         // --- Process the Completed I/O Operation ---
-        if (ioContext->op_type == operation_type::connect) {
+        if (operation->op_type == operation_type::connect) {
             std::cout << "*** async connected! "  << std::endl;
-            run = false;
-        }else if (ioContext->op_type == operation_type::read) {
-            std::string msg(ioContext->buf_info.buf, bytesTransferred);
+            if(socket->callbacks().on_connected) {
+                socket->callbacks().on_connected(*socket);
+            }
+        }else if (operation->op_type == operation_type::read) {
+            std::string msg(operation->buf_info.buf, bytesTransferred);
             std::cout << "*** async read done! msg: " << msg << std::endl;
-            run = false;
-
-        } else if (ioContext->op_type == operation_type::write) {
+            if(socket->callbacks().on_received) {
+                socket->callbacks().on_received(*socket, operation->buf_info.buf, bytesTransferred);
+            }
+        } else if (operation->op_type == operation_type::write) {
             // Write completed, clean up this specific I/O context.
             //delete ioContext; 
             std::cout << "*** async write done!" << std::endl;
+            if(socket->callbacks().on_sent) {
+                socket->callbacks().on_sent(*socket);
+            }
         }
     }
     return;
-
 }
-void io_context::remove_socket(socket_base& as) {}
 
-void io_context::add_socket(socket_base& as) {
+
+
+void io_context::remove_socket(async_socket_base& as) {}
+
+void io_context::add_socket(async_socket_base& as) {
     CreateIoCompletionPort(
         (HANDLE)as.fd(), // FileHandle (null for creation)
         hIOCP_,                 // ExistingCompletionPort (null for creation)

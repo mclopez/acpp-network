@@ -32,6 +32,7 @@ using in_port_t = decltype(sockaddr_in::sin_port);
 #endif
 
 #include <memory>
+#include <functional>
 
 namespace acpp::network {
 
@@ -58,24 +59,59 @@ public:
     int64_t fd() const { return fd_; }
     void close();
 
-protected:
+private:
     static const int invalid_fd;
     int64_t fd_ = invalid_fd; 
 };
 
 class io_context;
+class async_socket_base;
 struct socket_base_pimpl;
 
-class async_socket_base: public socket_base {
+struct socket_callbacks {
 public:
-    async_socket_base(io_context& io);
+    using on_connected_callback = std::function<void(async_socket_base&)>;
+    using on_received_callback = std::function<void(async_socket_base&, const char* buffer, size_t length) >;
+    using on_sent_callback = std::function<void(async_socket_base&)>;
+    on_connected_callback on_connected;
+    on_received_callback on_received;
+    on_sent_callback on_sent;
+};
+
+class async_socket_base {
+public:
+    async_socket_base(io_context& io, socket_callbacks&& callbacks);
     ~async_socket_base();
+
+
+    async_socket_base(const socket_base&) = delete;
+    async_socket_base& operator=(const async_socket_base&) = delete;
+
+    async_socket_base(async_socket_base&& other) noexcept;
+    async_socket_base& operator=(async_socket_base&& other) noexcept;
+
+
+
     void create_impl(int domain, int type, int protocol);
 
     bool connect(const sockaddr& adr);
+    socket_callbacks& callbacks() { return callbacks_;}
+
+    void read();
+    size_t write(const char* buffer, size_t);
+    void close();
+  
+  
+    bool valid() const {return fd_ != invalid_fd;}
+    int64_t fd() { return fd_;}
+
 private:
     io_context* io_;
     std::unique_ptr<socket_base_pimpl> pimpl_;
+    socket_callbacks callbacks_;
+    static const int invalid_fd;
+    int64_t fd_ = invalid_fd; 
+
 };
 
 class io_context {
@@ -83,9 +119,9 @@ public:
     io_context();
 
     void wait_for_input();
-    void remove_socket(socket_base& as);
+    void remove_socket(async_socket_base& as);
 
-    void add_socket(socket_base& as);
+    void add_socket(async_socket_base& as);
 
     void stop();
 

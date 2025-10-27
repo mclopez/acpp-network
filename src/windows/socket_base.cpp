@@ -82,127 +82,218 @@ bool socket_base::connect(const sockaddr& adr) {
 
 }
 
-/*
-    int async_socket::connect2(const std::string& ip, int port) {
-        sockaddr_in service;
-        service.sin_family = AF_INET;
-        int r = inet_pton(AF_INET, ip.c_str(), &service.sin_addr.s_addr);
-        if (r <= 0) {
-            throw std::invalid_argument("Invalid IP address format ****");
-        }
-
-        service.sin_port = htons(port);
-
-//        if (fd) ...
-        fd = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
-        std::cout << "connect2 fd: " << fd << std::endl;
-
-        SOCKADDR_IN localAddr = { 0 };
-        localAddr.sin_family = AF_INET;
-        localAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-        localAddr.sin_port = 0; // let system choose
-
-        bind(fd, (SOCKADDR*)&localAddr, sizeof(localAddr));
-
-
-        io_->add_socket(*this);
-
-        GUID guidConnectEx = WSAID_CONNECTEX;
-        DWORD bytesReturned = 0;
-        LPFN_CONNECTEX lpConnectEx = NULL;
-        
-        WSAIoctl(fd, SIO_GET_EXTENSION_FUNCTION_POINTER,
-            &guidConnectEx, sizeof(guidConnectEx),
-            &lpConnectEx, sizeof(lpConnectEx),
-            &bytesReturned, NULL, NULL);
-
-        if (lpConnectEx)    {
-            //OVERLAPPED overlapped = { 0 };
-            connect_op.op_type = operation_type::connect;
-
-            BOOL result = lpConnectEx(fd, (sockaddr*)&service, sizeof(sockaddr_in), NULL, 0, NULL, (LPOVERLAPPED)&(connect_op));
-
-            if (!result) {
-                int err = WSAGetLastError();
-                if (err != ERROR_IO_PENDING) {
-                    printf("ConnectEx failed: %d\n", err);
-                    closesocket(fd);
-                    return err;
-                }
-            }        
-            std::cout << "connect2 result: " << result << std::endl;
-        }
-        std::cout << "connect2 result: " << r << std::endl;
-        return r;
-    }
-*/
 
 
 enum class operation_type {
-    connect, read, write,
+    connect, read, write, accept,
 };
 
-typedef struct  {
+struct async_operation {
+    WSAOVERLAPPED olOverlap = { 0 };
+    operation_type type;
+};
+
+struct read_operation: public  async_operation  {
 public:    
-    OVERLAPPED overlapped;
-    SOCKET fd;
     WSABUF buf_info;
     char buffer[1024];
-    operation_type op_type; 
-}async_operation;
+};
+
+struct write_operation: public  async_operation  {
+public:    
+    WSABUF buf_info;
+    char buffer[1024];
+};
+
+struct connect_operation: public  async_operation  {
+public:    
+    WSABUF buf_info;
+    char buffer[1024];
+};
+
+struct accept_operation: public  async_operation  {
+public:    
+    //WSABUF buf_info;
+    char buffer[1024];
+    //char addr_buf[(sizeof(sockaddr_in) + 16) * 2]; // local and remote
+    std::unique_ptr<async_socket_base> new_socket;
+
+};
+
 
 struct socket_base_pimpl {
 public:
-    socket_base_pimpl()= default;
-    async_operation connect_op;
-    async_operation read_op;
-    async_operation write_op;
+    socket_base_pimpl():fd_(async_socket_base::invalid_fd),io_(nullptr){
+        std::cout << "socket_base_pimpl" << std::endl;
+    }
+
+    io_context* io_;
+    int64_t fd_ = async_socket_base::invalid_fd; 
+
+    socket_callbacks callbacks_;
+
+    //TODO: make something more compact: if accept is not connection. std::variant for ops? 
+    connect_operation connect_op;
+    read_operation read_op;
+    write_operation write_op;
+    accept_operation accept_op;
+
 private:
 };
 
 const int async_socket_base::invalid_fd = INVALID_SOCKET;
 
 
-async_socket_base::async_socket_base(io_context& io, socket_callbacks&& callbacks)
-:io_(&io),callbacks_(std::move(callbacks)) {
+async_socket_base::async_socket_base()
+:pimpl_(std::make_unique<socket_base_pimpl>())
+{
+    std::cout << "async_socket_base() 0" << std::endl;
 
 }
+
+async_socket_base::async_socket_base(io_context& io, socket_callbacks&& callbacks)
+:async_socket_base() {
+    std::cout << "async_socket_base() 1" << std::endl;
+    pimpl_->callbacks_ = std::move(callbacks);
+    pimpl_->io_ = &io;
+}
+
+async_socket_base::async_socket_base(async_socket_base&& other) noexcept 
+:async_socket_base()
+{
+    std::cout << "async_socket_base() 2" << std::endl;
+    pimpl_ = std::move(other.pimpl_);
+}
+
 
 async_socket_base::~async_socket_base() {
     close();
 }
 
-async_socket_base::async_socket_base(async_socket_base&& other) noexcept 
-    : fd_(other.fd_) {
-    other.fd_ = -1; // Steal the resource
+int64_t async_socket_base::fd() { 
+    return pimpl_->fd_;
+}
+
+
+bool async_socket_base::valid() const {
+    return (pimpl_->fd_ != invalid_fd);
 }
 
 
 async_socket_base& async_socket_base::operator=(async_socket_base&& other) noexcept {
     if (this != &other) {
-        ::close(fd_); // Clean up current resource
-        fd_ = other.fd_;
-        other.fd_ = -1; // Steal the resource
+        //::close(pimpl_->fd_); // Clean up current resource
+        close();
+        pimpl_->fd_ = other.pimpl_->fd_;
+        other.pimpl_->fd_ = async_socket_base::invalid_fd; // Steal the resource
     }
     return *this;
 }
 
 
-
 void async_socket_base::create_impl(int domain, int type, int protocol) {
+    //std::cout << "async_socket_base::create_impl" << std::endl;
+
     if (valid())
         close();
-    fd_ = WSASocket(domain, type, protocol, NULL, 0, WSA_FLAG_OVERLAPPED);
-    pimpl_ = std::make_unique<socket_base_pimpl>();
-    io_->add_socket(*this);
+    //std::cout << "async_socket_base::create_impl 1" << std::endl;
+    pimpl_->fd_ = WSASocket(domain, type, protocol, NULL, 0, WSA_FLAG_OVERLAPPED);
+    //std::cout << "async_socket_base::create_impl 2" << std::endl;
+    pimpl_->io_->add_socket(*this);
+    //std::cout << "async_socket_base::create_impl 3" << std::endl;
 }
 
 void async_socket_base::close() {
-    if (fd_ != invalid_fd) {
-        ::shutdown(fd_, SD_SEND);
-        ::closesocket(fd_);
-        fd_ = invalid_fd;
+    if (valid()) {
+        ::shutdown(pimpl_->fd_, SD_SEND);
+        ::closesocket(pimpl_->fd_);
+        pimpl_->fd_ = invalid_fd;
     }
+}
+
+void async_socket_base::callbacks(socket_callbacks&& callbacks) {
+    pimpl_->callbacks_ = std::move(callbacks);
+}
+
+socket_callbacks& async_socket_base::callbacks() { 
+    return pimpl_->callbacks_;
+}
+
+
+bool async_socket_base::bind(const sockaddr& addr) {
+    return ::bind(pimpl_->fd_, &addr, sizeof(sockaddr));
+}
+
+int async_socket_base::listen(int backlog) {
+    //TOOD: check vality
+    return ::listen(pimpl_->fd_, backlog);
+}
+
+int async_socket_base::accept() {
+    //TOOD: check vality
+    // if (!valid()) {
+    //     create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
+    // }
+
+    GUID guidFunc =  WSAID_ACCEPTEX;
+    DWORD bytesReturned = 0;
+    LPFN_ACCEPTEX lpAcceptEx = NULL;
+    
+    WSAIoctl(pimpl_->fd_, SIO_GET_EXTENSION_FUNCTION_POINTER, //SIO_GET_EXTENSION_FUNCTION_POINTER
+        &guidFunc, sizeof(guidFunc),
+        &lpAcceptEx, sizeof(lpAcceptEx),
+        &bytesReturned, NULL, NULL);
+
+    if (lpAcceptEx)    {
+        //OVERLAPPED overlapped = { 0 };
+        pimpl_->accept_op.type = operation_type::accept;
+        pimpl_->accept_op.new_socket = std::make_unique<async_socket_base>(*pimpl_->io_, socket_callbacks{});
+        pimpl_->accept_op.new_socket->create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP); //TODO: make multy protocol
+
+        DWORD dwLocalAddressLength = sizeof(sockaddr_in) + 16;
+        DWORD dwRemoteAddressLength = sizeof(sockaddr_in) + 16;
+        DWORD lpdwBytesReceived = 0;
+
+        std::cout << "accept accpet_op: " << (void*)&pimpl_->accept_op  << std::endl;
+        std::cout << "accept pimpl_->accept_op.type: " << (int)pimpl_->accept_op.type << std::endl;
+
+        BOOL result = lpAcceptEx(
+            pimpl_->fd_, 
+            pimpl_->accept_op.new_socket->pimpl_->fd_, 
+            &pimpl_->accept_op.buffer, 
+            0, //sizeof(pimpl_->accept_op.buffer) - ((sizeof (sockaddr_in) + 16) * 2), 
+            dwLocalAddressLength, 
+            dwRemoteAddressLength, 
+            &lpdwBytesReceived, 
+            (LPOVERLAPPED)&(pimpl_->accept_op.olOverlap));
+
+    // BOOL ok = lpfnAcceptEx(
+    //     listenSock,
+    //     ctx->clientSock,
+    //     ctx->addrBuf,
+    //     0,
+    //     sizeof(SOCKADDR_IN) + 16,
+    //     sizeof(SOCKADDR_IN) + 16,
+    //     &bytesReceived,
+    //     &ctx->overlapped);
+
+
+        std::cout << "accept pimpl_->accept_op.type: " << (int)pimpl_->accept_op.type << std::endl;
+
+        if (!result) {
+            int err = WSAGetLastError();
+            if (err != ERROR_IO_PENDING) {
+                printf("lpAcceptEx failed: %d\n", err);
+                closesocket(pimpl_->fd_);
+                return err;
+            }
+        }        
+        std::cout << "accept result: " << result << std::endl;
+    } else {
+        std::cout << "accept lpAcceptEx faild: " << std::endl;
+
+    }
+    return 0;
 }
 
 
@@ -215,29 +306,29 @@ bool async_socket_base::connect(const sockaddr& adr) {
     localAddr.sin_addr.s_addr = htonl(INADDR_ANY);
     localAddr.sin_port = 0; // let system choose
 
-    bind(fd_, (SOCKADDR*)&localAddr, sizeof(localAddr));
+    ::bind(pimpl_->fd_, (SOCKADDR*)&localAddr, sizeof(localAddr));
 
 
     GUID guidConnectEx = WSAID_CONNECTEX;
     DWORD bytesReturned = 0;
     LPFN_CONNECTEX lpConnectEx = NULL;
     
-    WSAIoctl(fd_, SIO_GET_EXTENSION_FUNCTION_POINTER,
+    WSAIoctl(pimpl_->fd_, SIO_GET_EXTENSION_FUNCTION_POINTER,
         &guidConnectEx, sizeof(guidConnectEx),
         &lpConnectEx, sizeof(lpConnectEx),
         &bytesReturned, NULL, NULL);
 
     if (lpConnectEx)    {
         //OVERLAPPED overlapped = { 0 };
-        pimpl_->connect_op.op_type = operation_type::connect;
+        pimpl_->connect_op.type = operation_type::connect;
 
-        BOOL result = lpConnectEx(fd_, &adr, sizeof(sockaddr), NULL, 0, NULL, (LPOVERLAPPED)&(pimpl_->connect_op));
+        BOOL result = lpConnectEx(pimpl_->fd_, &adr, sizeof(sockaddr), NULL, 0, NULL, (LPOVERLAPPED)&(pimpl_->connect_op.olOverlap));
 
         if (!result) {
             int err = WSAGetLastError();
             if (err != ERROR_IO_PENDING) {
                 printf("ConnectEx failed: %d\n", err);
-                closesocket(fd_);
+                closesocket(pimpl_->fd_);
                 return err;
             }
         }        
@@ -252,8 +343,7 @@ bool async_socket_base::connect(const sockaddr& adr) {
 
 void async_socket_base::read() {
     auto& op = pimpl_->read_op;
-    op.fd = fd();
-    op.op_type = operation_type::read;
+    op.type = operation_type::read;
     
     // Set up the WSABUF
     op.buf_info.buf = op.buffer;
@@ -268,7 +358,7 @@ void async_socket_base::read() {
                 1, 
                 &bytes, 
                 &flags, 
-                (LPOVERLAPPED)&op, 
+                (LPOVERLAPPED)&op.olOverlap, 
                 NULL) == SOCKET_ERROR) 
     {
         // Ignore WSA_IO_PENDING (997), which means the operation is running asynchronously
@@ -281,8 +371,7 @@ void async_socket_base::read() {
 
 size_t async_socket_base::write(const char* buffer, size_t len) {
     auto& op = pimpl_->write_op;
-    op.fd = fd();
-    op.op_type = operation_type::write;
+    op.type = operation_type::write;// TODO: not need to always set the type
     
     memcpy(op.buffer, buffer, len); //check buffer size!!
     op.buf_info.buf = op.buffer;
@@ -296,7 +385,7 @@ size_t async_socket_base::write(const char* buffer, size_t len) {
                 1, 
                 &bytes, 
                 0, // flags
-                (LPOVERLAPPED)&op, 
+                (LPOVERLAPPED)&op.olOverlap, 
                 NULL);
                 
     if (res == 0) {
@@ -334,6 +423,7 @@ void io_context::wait_for_input() {
     run = true;
     while (run) {
         // Blocks until an I/O operation completes and is placed on the queue
+        std::cout << "wait_for_input GetQueuedCompletionStatus" << std::endl;
         BOOL success = GetQueuedCompletionStatus(
             hIOCP_,
             &bytesTransferred,
@@ -341,6 +431,7 @@ void io_context::wait_for_input() {
             &lpOverlapped,
             INFINITE // Wait indefinitely
         );
+
         std::cout <<"***************************************** process ...." << std::endl;
 
         // The completionKey is our CLIENT_CONTEXT*
@@ -348,25 +439,37 @@ void io_context::wait_for_input() {
         std::cout <<"process ... socekt: " << (void*)socket << " op:" << (void*)lpOverlapped << std::endl;
         if (!socket) continue; // Should not happen
 
-        // lpOverlapped points to our IO_CONTEXT::Overlapped member
-        async_operation* operation = (async_operation*)lpOverlapped;
 
+        // lpOverlapped points to our IO_CONTEXT::Overlapped member
+        //async_operation* operation = (async_operation*)lpOverlapped;
+        async_operation* operation = CONTAINING_RECORD(lpOverlapped, async_operation, olOverlap);
+        std::cout << "*** operation->type " << (int)operation->type << std::endl;
 
         // --- Process the Completed I/O Operation ---
-        if (operation->op_type == operation_type::connect) {
+        if (operation->type == operation_type::accept) {
+            accept_operation& op = (accept_operation&)*operation;
+            std::cout << "*** async accept! "  << std::endl;
+            std::string msg(op.buffer, bytesTransferred);
+            std::cout << "*** async read done! msg: " << msg << std::endl;
+
+            if(socket->callbacks().on_accepted) {
+                std::cout << "*** async accept! calling callback "  << std::endl;
+                socket->callbacks().on_accepted(*socket, std::move(op.new_socket));
+            }
+            std::cout << "*** async accept! 2"  << std::endl;
+        } else if (operation->type == operation_type::connect) {
             std::cout << "*** async connected! "  << std::endl;
             if(socket->callbacks().on_connected) {
                 socket->callbacks().on_connected(*socket);
             }
-        }else if (operation->op_type == operation_type::read) {
-            std::string msg(operation->buf_info.buf, bytesTransferred);
+         }else if (operation->type == operation_type::read) {
+            read_operation& op = *(read_operation*)operation;
+            std::string msg(op.buf_info.buf, bytesTransferred);
             std::cout << "*** async read done! msg: " << msg << std::endl;
             if(socket->callbacks().on_received) {
-                socket->callbacks().on_received(*socket, operation->buf_info.buf, bytesTransferred);
+                socket->callbacks().on_received(*socket, op.buf_info.buf, bytesTransferred);
             }
-        } else if (operation->op_type == operation_type::write) {
-            // Write completed, clean up this specific I/O context.
-            //delete ioContext; 
+        } else if (operation->type == operation_type::write) {
             std::cout << "*** async write done!" << std::endl;
             if(socket->callbacks().on_sent) {
                 socket->callbacks().on_sent(*socket);

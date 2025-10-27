@@ -176,7 +176,7 @@ size_t datagram_socket<Address, Protocol>::recv_from(address_type& addr, char* d
 template<typename Address, int Protocol>
 int datagram_socket<Address, Protocol>::bind(const address_type& ad) {
     if (!socket_.valid()) {
-        socket_.create_impl(get_family(ad), socket_type, 0);
+        socket_.create_impl(get_family(ad), socket_type, Protocol);
     }
     int res = ::bind(socket_.fd(), reinterpret_cast<const sockaddr*>(&ad), sizeof(sockaddr));
     if (res < 0) {

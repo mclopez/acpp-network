@@ -265,8 +265,8 @@ TEST(AsyncSocketTests, first)
     using namespace acpp::network;
     std::cout << "*** Socket tests" << std::endl;
     int port = 6664;
-    std::thread server_th([port](){
-        std::cout << "Socket tests th" << std::endl;
+    auto sync_server = [port](){
+        std::cout << "sync_server th" << std::endl;
 
         stream_socket<ip_socketaddress> server_socket;
 
@@ -281,58 +281,115 @@ TEST(AsyncSocketTests, first)
              std::cout << "Server received: " << std::string(buffer, bytes_received) << std::endl;
              client_socket.send(buffer, bytes_received); // Echo back
          }
+    };
+
+    auto async_server = [port](){
+        std::cout << "async_server th" << std::endl;
+
+        acpp::network::io_context io;
+        //std::vector<async_socket_base> sockets;
+        std::unique_ptr<async_socket_base> socket;
+        std::cout << "async_server th 2" << std::endl;
+        async_socket_base server_socket(io, 
+            socket_callbacks {
+                .on_accepted = [&socket](async_socket_base& server, std::unique_ptr<async_socket_base>&& accepted_socket) {
+                    std::cout << "ACCEPTED" << std::endl;
+                    socket = std::move(accepted_socket);
+                    socket->callbacks(socket_callbacks {
+                        .on_connected = [](async_socket_base& s) {
+                            std::cout << "SERVER Async server socket connected" << std::endl;
+                        },
+                        .on_received = [&](async_socket_base& s, const char* buf, size_t len){
+                            std::string msg(buf, len);
+                            std::cout << "SERVER  Async server socket  received " << msg << "  from AsyncSocketTests.first" << std::endl;
+                            //io.stop();
+                            std::string msg2("hello back!");
+                            s.write(msg2.c_str(), msg2.size());
+                        },
+                        .on_sent = [](async_socket_base& s){
+                            std::cout << "SERVER Async server socket sent from AsyncSocketTests.first" << std::endl;
+                        }
+                    });
+                    socket->read(); //start reading
+                    //sockets.emplace_back(std::move(accepted_socket));
+                }
+            }
+        );
+        std::cout << "async_server th 3" << std::endl;
+        server_socket.create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
+
+        std::cout << "async_server th 4" << std::endl;
+
+        std::cout << "*** server socket " << (void*) &server_socket << std::endl;
+        
+        ip_socketaddress addr = ip4_sockaddress("127.0.0.1", port);
+
+        server_socket.bind(to_sockaddr(addr));
+        server_socket.listen(5);
+
+        auto res = server_socket.accept();
+        io.wait_for_input();
+
+        //  char buffer[1024];
+        //  auto bytes_received = client_socket.receive(buffer, sizeof(buffer));
+        //  if (bytes_received > 0) {
+        //      std::cout << "Server received: " << std::string(buffer, bytes_received) << std::endl;
+        //      client_socket.send(buffer, bytes_received); // Echo back
+        //  }
+    };
+
+
+    auto sync_client = ([port](){
+       std::cout << "Socket tests client" << std::endl;
+       stream_socket<ip_socketaddress> socket;
+       ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port);
+
+       socket.connect(adr);
+       //std::this_thread::sleep_for(std::chrono::microseconds(1000));
+       const char* msg = "Hello, Echo Server!";
+       std::cout << "client send: " << msg << std::endl;
+       socket.send(msg, strlen(msg));
+       char buffer[1024];
+       auto bytes_received = socket.receive(buffer, sizeof(buffer));
+       if (bytes_received > 0) {
+           std::string msg(buffer, bytes_received);
+           std::cout << "Client received: " << msg << std::endl;
+           EXPECT_EQ(msg, "Hello, Echo Server!");
+       }
     });
 
-    // std::thread client_th([port](){
-    //    std::cout << "Socket tests client" << std::endl;
-    //    stream_socket<ip_socketaddress> socket;
-    //    ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port);
-
-    //    socket.connect(adr);
-    //    const char* msg = "Hello, Echo Server!";
-    //    socket.send(msg, strlen(msg));
-    //    char buffer[1024];
-    //    auto bytes_received = socket.receive(buffer, sizeof(buffer));
-    //    if (bytes_received > 0) {
-    //        std::string msg(buffer, bytes_received);
-    //        std::cout << "Client received: " << msg << std::endl;
-    //        EXPECT_EQ(msg, "Hello, Echo Server!");
-    //    }
-    // });
-
-    std::thread client_th([port](){
+    auto async_client = [port](){
         std::cout << "Socket tests client" << std::endl;
         acpp::network::io_context io;
         async_socket_base socket(io, 
             socket_callbacks{
                 .on_connected = [](async_socket_base& s) {
-                    std::cout << "Socket connected from AsyncSocketTests.first" << std::endl;
+                    std::cout << "******************************** Socket connected from AsyncSocketTests.first" << std::endl;
                     std::string msg("hola");
                     s.read();
                     s.write(msg.c_str(), msg.size());
                 },
                 .on_received = [&](async_socket_base& s, const char* buf, size_t len){
                     std::string msg(buf, len);
-                    std::cout << "Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
+                    std::cout << "******************************** Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
                     io.stop();
                 },
                 .on_sent = [](async_socket_base& s){
-                    std::cout << "Socket sent from AsyncSocketTests.first" << std::endl;
+                    std::cout << "******************************** Socket sent from AsyncSocketTests.first" << std::endl;
                 }
             });
 
-        //std::cout << (void*) &socket.read_op << " " << (void*) &socket.write_op << " " << (void*) &socket.connect_op << std::endl;
         socket.connect(to_sockaddr(ip4_sockaddress("127.0.0.1", port)));
-        //io.add_socket(socket);
-        //socket.start_write();
         std::string msg("hola!");
-        //::send(socket.fd, msg.c_str(), msg.size(), 0);
-        //socket.start_write(msg);
-        //socket.start_reading();
         io.wait_for_input();
 
         std::cout << "Socket tests client end" << std::endl;
-    });
+    };
+    
+
+    std::thread server_th(async_server);
+    std::thread client_th(sync_client);
+    
     std::this_thread::sleep_for(std::chrono::seconds(5));
     //io.stop();
     if (server_th.joinable())

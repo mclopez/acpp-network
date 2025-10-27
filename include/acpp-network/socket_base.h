@@ -40,7 +40,7 @@ namespace acpp::network {
 class socket_base {
 public:    
     socket_base();
-    socket_base(int fd);
+    explicit socket_base(int fd);
     ~socket_base();
 
     socket_base(const socket_base&) = delete;
@@ -70,48 +70,54 @@ struct socket_base_pimpl;
 
 struct socket_callbacks {
 public:
+
+    using on_accepted_callback = std::function<void(async_socket_base&, std::unique_ptr<async_socket_base>&&)>;
     using on_connected_callback = std::function<void(async_socket_base&)>;
     using on_received_callback = std::function<void(async_socket_base&, const char* buffer, size_t length) >;
     using on_sent_callback = std::function<void(async_socket_base&)>;
+
     on_connected_callback on_connected;
     on_received_callback on_received;
     on_sent_callback on_sent;
+    on_accepted_callback on_accepted;
 };
 
 class async_socket_base {
 public:
-    async_socket_base(io_context& io, socket_callbacks&& callbacks);
+    async_socket_base();
+    async_socket_base(io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
+    async_socket_base(const socket_base&) = delete;
+    async_socket_base(async_socket_base&& other) noexcept;
+
     ~async_socket_base();
 
 
-    async_socket_base(const socket_base&) = delete;
     async_socket_base& operator=(const async_socket_base&) = delete;
 
-    async_socket_base(async_socket_base&& other) noexcept;
     async_socket_base& operator=(async_socket_base&& other) noexcept;
-
-
 
     void create_impl(int domain, int type, int protocol);
 
+    bool bind(const sockaddr& adr);
+    int listen(int backlog=0);
+    int accept();
+
     bool connect(const sockaddr& adr);
-    socket_callbacks& callbacks() { return callbacks_;}
+    void callbacks(socket_callbacks&& calbacks);
+    socket_callbacks& callbacks();
 
     void read();
     size_t write(const char* buffer, size_t);
     void close();
   
   
-    bool valid() const {return fd_ != invalid_fd;}
-    int64_t fd() { return fd_;}
+    bool valid() const;
+    int64_t fd();
+
+    static const int invalid_fd;
 
 private:
-    io_context* io_;
     std::unique_ptr<socket_base_pimpl> pimpl_;
-    socket_callbacks callbacks_;
-    static const int invalid_fd;
-    int64_t fd_ = invalid_fd; 
-
 };
 
 class io_context {

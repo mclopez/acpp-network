@@ -288,14 +288,13 @@ TEST(AsyncSocketTests, first)
 
         acpp::network::io_context io;
         //std::vector<async_socket_base> sockets;
-        std::unique_ptr<async_socket_base> socket;
+        async_socket_base socket;
         std::cout << "async_server th 2" << std::endl;
         async_socket_base server_socket(io, 
             socket_callbacks {
-                .on_accepted = [&](async_socket_base& server, std::unique_ptr<async_socket_base>&& accepted_socket) {
+                .on_accepted = [&](async_socket_base& server, async_socket_base&& accepted_socket) {
                     std::cout << "ACCEPTED" << std::endl;
-                    socket = std::move(accepted_socket);
-                    socket->callbacks(socket_callbacks {
+                    accepted_socket.callbacks(socket_callbacks {
                         .on_connected = [](async_socket_base& s) {
                             std::cout << "SERVER Async server socket connected" << std::endl;
                         },
@@ -311,7 +310,11 @@ TEST(AsyncSocketTests, first)
                             io.stop();
                         }
                     });
-                    socket->read(); //start reading
+                    socket = std::move(accepted_socket);
+                    std::cout << "SERVER socket.callbacks().on_read" << (socket.callbacks().on_received? "read assigned":"read not assigned") << std::endl;
+
+
+                    socket.read(); //start reading
                     //sockets.emplace_back(std::move(accepted_socket));
                 }
             }
@@ -388,11 +391,10 @@ TEST(AsyncSocketTests, first)
         std::cout << "Socket tests client end" << std::endl;
     };
     
-
     std::thread server_th(async_server);
-    std::thread client_th(async_client);
+    std::thread client_th(sync_client);
     
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     //io.stop();
     if (server_th.joinable())
         server_th.join();

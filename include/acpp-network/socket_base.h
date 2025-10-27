@@ -71,7 +71,7 @@ struct socket_base_pimpl;
 struct socket_callbacks {
 public:
 
-    using on_accepted_callback = std::function<void(async_socket_base&, std::unique_ptr<async_socket_base>&&)>;
+    using on_accepted_callback = std::function<void(async_socket_base&, async_socket_base&&)>;
     using on_connected_callback = std::function<void(async_socket_base&)>;
     using on_received_callback = std::function<void(async_socket_base&, const char* buffer, size_t length) >;
     using on_sent_callback = std::function<void(async_socket_base&)>;
@@ -84,6 +84,7 @@ public:
 
 class async_socket_base {
 public:
+    friend class io_context;
     async_socket_base();
     async_socket_base(io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
     async_socket_base(const socket_base&) = delete;

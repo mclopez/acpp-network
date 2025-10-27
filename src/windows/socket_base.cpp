@@ -123,8 +123,8 @@ public:
 
 struct socket_base_pimpl {
 public:
-    socket_base_pimpl():fd_(async_socket_base::invalid_fd),io_(nullptr){
-        std::cout << "socket_base_pimpl" << std::endl;
+    socket_base_pimpl(async_socket_base& parent):fd_(async_socket_base::invalid_fd),io_(nullptr), parent_(&parent){
+        std::cout << "socket_base_pimpl()" << std::endl;
     }
 
     io_context* io_;
@@ -137,6 +137,7 @@ public:
     read_operation read_op;
     write_operation write_op;
     accept_operation accept_op;
+    async_socket_base* parent_;
 
 private:
 };
@@ -145,7 +146,7 @@ const int async_socket_base::invalid_fd = INVALID_SOCKET;
 
 
 async_socket_base::async_socket_base()
-:pimpl_(std::make_unique<socket_base_pimpl>())
+:pimpl_(std::make_unique<socket_base_pimpl>(*this))
 {
     std::cout << "async_socket_base() 0" << std::endl;
 
@@ -163,6 +164,8 @@ async_socket_base::async_socket_base(async_socket_base&& other) noexcept
 {
     std::cout << "async_socket_base() 2" << std::endl;
     pimpl_ = std::move(other.pimpl_);
+    pimpl_->parent_ = this;
+    other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
 }
 
 
@@ -181,12 +184,15 @@ bool async_socket_base::valid() const {
 
 
 async_socket_base& async_socket_base::operator=(async_socket_base&& other) noexcept {
-    if (this != &other) {
-        //::close(pimpl_->fd_); // Clean up current resource
-        close();
-        pimpl_->fd_ = other.pimpl_->fd_;
-        other.pimpl_->fd_ = async_socket_base::invalid_fd; // Steal the resource
-    }
+    // if (this != &other) {
+    //     //::close(pimpl_->fd_); // Clean up current resource
+    //     close();
+    //     pimpl_->fd_ = other.pimpl_->fd_;
+    //     other.pimpl_->fd_ = async_socket_base::invalid_fd; // Steal the resource
+    // }
+    pimpl_ = std::move(other.pimpl_);
+    pimpl_->parent_ = this;
+    other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
     return *this;
 }
 
@@ -435,7 +441,7 @@ void io_context::wait_for_input() {
         std::cout <<"***************************************** process ...." << std::endl;
 
         // The completionKey is our CLIENT_CONTEXT*
-        async_socket_base* socket = (async_socket_base*)completionKey;
+        socket_base_pimpl* socket = (socket_base_pimpl*)completionKey;
         std::cout <<"process ... socekt: " << (void*)socket << " op:" << (void*)lpOverlapped << std::endl;
         if (!socket) continue; // Should not happen
 
@@ -450,29 +456,30 @@ void io_context::wait_for_input() {
             accept_operation& op = (accept_operation&)*operation;
             std::cout << "*** async accept! "  << std::endl;
             std::string msg(op.buffer, bytesTransferred);
-            std::cout << "*** async read done! msg: " << msg << std::endl;
+            std::cout << "*** async accept/read done! msg: " << msg << std::endl;
 
-            if(socket->callbacks().on_accepted) {
+            if(socket->callbacks_.on_accepted) {
                 std::cout << "*** async accept! calling callback "  << std::endl;
-                socket->callbacks().on_accepted(*socket, std::move(op.new_socket));
+                socket->callbacks_.on_accepted(*socket->parent_, std::move(*op.new_socket));
             }
             std::cout << "*** async accept! 2"  << std::endl;
         } else if (operation->type == operation_type::connect) {
             std::cout << "*** async connected! "  << std::endl;
-            if(socket->callbacks().on_connected) {
-                socket->callbacks().on_connected(*socket);
+            if(socket->callbacks_.on_connected) {
+                socket->callbacks_.on_connected(*socket->parent_);
             }
          }else if (operation->type == operation_type::read) {
             read_operation& op = *(read_operation*)operation;
             std::string msg(op.buf_info.buf, bytesTransferred);
             std::cout << "*** async read done! msg: " << msg << std::endl;
-            if(socket->callbacks().on_received) {
-                socket->callbacks().on_received(*socket, op.buf_info.buf, bytesTransferred);
+            if(socket->callbacks_.on_received) {
+                std::cout << "*** async read done! calling received callback " << msg << std::endl;
+                socket->callbacks_.on_received(*socket->parent_, op.buf_info.buf, bytesTransferred);
             }
         } else if (operation->type == operation_type::write) {
             std::cout << "*** async write done!" << std::endl;
-            if(socket->callbacks().on_sent) {
-                socket->callbacks().on_sent(*socket);
+            if(socket->callbacks_.on_sent) {
+                socket->callbacks_.on_sent(*socket->parent_);
             }
         }
     }
@@ -487,7 +494,7 @@ void io_context::add_socket(async_socket_base& as) {
     CreateIoCompletionPort(
         (HANDLE)as.fd(), // FileHandle (null for creation)
         hIOCP_,                 // ExistingCompletionPort (null for creation)
-        (ULONG_PTR)&as,                    // CompletionKey (not used yet)
+        (ULONG_PTR)as.pimpl_.get(),                    // CompletionKey (not used yet)
         0                     // NumberOfConcurrentThreads (0 uses system default)    
     );
     std::cout << "add_socket to coml port" << std::endl; 

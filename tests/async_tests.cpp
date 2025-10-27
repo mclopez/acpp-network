@@ -292,7 +292,7 @@ TEST(AsyncSocketTests, first)
         std::cout << "async_server th 2" << std::endl;
         async_socket_base server_socket(io, 
             socket_callbacks {
-                .on_accepted = [&socket](async_socket_base& server, std::unique_ptr<async_socket_base>&& accepted_socket) {
+                .on_accepted = [&](async_socket_base& server, std::unique_ptr<async_socket_base>&& accepted_socket) {
                     std::cout << "ACCEPTED" << std::endl;
                     socket = std::move(accepted_socket);
                     socket->callbacks(socket_callbacks {
@@ -303,11 +303,12 @@ TEST(AsyncSocketTests, first)
                             std::string msg(buf, len);
                             std::cout << "SERVER  Async server socket  received " << msg << "  from AsyncSocketTests.first" << std::endl;
                             //io.stop();
-                            std::string msg2("hello back!");
-                            s.write(msg2.c_str(), msg2.size());
+                            //std::string msg2("hello back!");
+                            s.write(msg.c_str(), msg.size());
                         },
-                        .on_sent = [](async_socket_base& s){
+                        .on_sent = [&](async_socket_base& s){
                             std::cout << "SERVER Async server socket sent from AsyncSocketTests.first" << std::endl;
+                            io.stop();
                         }
                     });
                     socket->read(); //start reading
@@ -372,6 +373,7 @@ TEST(AsyncSocketTests, first)
                 .on_received = [&](async_socket_base& s, const char* buf, size_t len){
                     std::string msg(buf, len);
                     std::cout << "******************************** Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
+                    EXPECT_EQ(msg, "hola");
                     io.stop();
                 },
                 .on_sent = [](async_socket_base& s){
@@ -388,7 +390,7 @@ TEST(AsyncSocketTests, first)
     
 
     std::thread server_th(async_server);
-    std::thread client_th(sync_client);
+    std::thread client_th(async_client);
     
     std::this_thread::sleep_for(std::chrono::seconds(5));
     //io.stop();

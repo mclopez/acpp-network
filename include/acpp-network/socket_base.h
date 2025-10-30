@@ -126,6 +126,7 @@ public:
     io_context();
 
     void wait_for_input();
+    void exec(std::function<void()>&&);
     void remove_socket(async_socket_base& as);
 
     void add_socket(async_socket_base& as);

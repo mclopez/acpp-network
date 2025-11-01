@@ -1,0 +1,58 @@
+//  Copyright Marcos Cambón-López 2025.
+
+// Distributed under the Mozilla Public License Version 2.0.
+//    (See accompanying file LICENSE or copy at
+//          https://www.mozilla.org/en-US/MPL/2.0/)
+
+
+#include <acpp-network/socket_base.h>
+
+
+namespace acpp::network {
+
+
+const int socket_base::invalid_fd = -1;
+
+socket_base::socket_base(socket_base&& other) noexcept 
+    : fd_(other.fd_) {
+    other.fd_ = -1; // Steal the resource
+}
+
+socket_base& socket_base::operator=(socket_base&& other) noexcept {
+    if (this != &other) {
+        ::close(fd_); // Clean up current resource
+        fd_ = other.fd_;
+        other.fd_ = -1; // Steal the resource
+    }
+    return *this;
+}
+
+void socket_base::close() {
+    if (fd_ != invalid_fd) {
+        ::close(fd_);
+        fd_ = invalid_fd;
+    }
+}
+
+void socket_base::create_impl(int domain, int type, int protocol, bool non_blocking) {
+    if (valid())
+        close();
+    non_blocking_ = non_blocking;    
+    fd_ = ::socket(domain, type, protocol);
+}
+
+bool socket_base::connect(const ) {
+    return ::connect(socket_.fd(), &to_sockaddr(adr), sizeof(sockaddr)) == 0;
+}
+
+
+void log_error(const std::string& func) {
+    std::string error;
+    error = strerror(errno);
+    std::cerr << "[POSIX] Error in " << func << ": " << error << std::endl;
+}
+
+
+
+
+} //namespace acpp::network

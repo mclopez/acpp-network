@@ -378,16 +378,26 @@ size_t async_socket_base::write(const char* buffer, size_t len) {
 }
 
 
-io_context::io_context(){
-    hIOCP_ = CreateIoCompletionPort(
+struct io_context_pimpl {
+    std::atomic_bool run;
+    HANDLE hIOCP_ = INVALID_HANDLE_VALUE;
+};
+
+io_context::io_context():pimpl_(std::make_unique<io_context_pimpl>()){
+
+    pimpl_->hIOCP_ = CreateIoCompletionPort(
         INVALID_HANDLE_VALUE, // FileHandle (null for creation)
         NULL,                 // ExistingCompletionPort (null for creation)
         0,                    // CompletionKey (not used yet)
         0                     // NumberOfConcurrentThreads (0 uses system default)    
     );
-    if (hIOCP_ == NULL) {
+    if (pimpl_->hIOCP_ == NULL) {
         throw std::runtime_error("Error in CreateIoCompletionPort (1)");
     }
+}
+
+io_context::~io_context() {
+    
 }
 
 
@@ -395,7 +405,7 @@ void io_context::exec(std::function<void()>&& f) {
     auto op = std::make_unique<execution_operation>();
     //op->type = operation_type::exec;
     op->fun = std::move(f);
-    if (PostQueuedCompletionStatus(hIOCP_, 0, (ULONG_PTR)nullptr, &op->olOverlap)) {
+    if (PostQueuedCompletionStatus(pimpl_->hIOCP_, 0, (ULONG_PTR)nullptr, &op->olOverlap)) {
         // if posted dont release op
         op.release();
     }
@@ -407,12 +417,12 @@ void io_context::wait_for_input() {
     LPOVERLAPPED lpOverlapped = NULL;
 
     std::cout << "wait_for_input" << std::endl;
-    run = true;
-    while (run) {
+    pimpl_->run = true;
+    while (pimpl_->run) {
         // Blocks until an I/O operation completes and is placed on the queue
         std::cout << "wait_for_input GetQueuedCompletionStatus" << std::endl;
         BOOL success = GetQueuedCompletionStatus(
-            hIOCP_,
+            pimpl_->hIOCP_,
             &bytesTransferred,
             &completionKey,
             &lpOverlapped,
@@ -476,7 +486,7 @@ void io_context::remove_socket(async_socket_base& as) {}
 void io_context::add_socket(async_socket_base& as) {
     CreateIoCompletionPort(
         (HANDLE)as.fd(), // FileHandle (null for creation)
-        hIOCP_,                 // ExistingCompletionPort (null for creation)
+        pimpl_->hIOCP_,                 // ExistingCompletionPort (null for creation)
         (ULONG_PTR)as.pimpl_.get(),                    // CompletionKey (not used yet)
         0                     // NumberOfConcurrentThreads (0 uses system default)    
     );
@@ -484,7 +494,7 @@ void io_context::add_socket(async_socket_base& as) {
 }
 
 void io_context::stop() {
-    run = false;
+    pimpl_->run = false;
 }
 
 

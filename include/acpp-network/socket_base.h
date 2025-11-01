@@ -121,9 +121,12 @@ private:
     std::unique_ptr<socket_base_pimpl> pimpl_;
 };
 
+struct io_context_pimpl;
+
 class io_context {
 public:
     io_context();
+    ~io_context();
 
     void wait_for_input();
     void exec(std::function<void()>&&);
@@ -134,9 +137,7 @@ public:
     void stop();
 
 private:
-    std::atomic_bool run;
-    HANDLE hIOCP_ = INVALID_HANDLE_VALUE;
-
+    std::unique_ptr<io_context_pimpl> pimpl_;
 };
 
 

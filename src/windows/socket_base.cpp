@@ -30,7 +30,7 @@ using in_port_t = decltype(sockaddr_in::sin_port);
 const int socket_base::invalid_fd = INVALID_SOCKET;
 
 
-socket_base::socket_base() {
+socket_base::socket_base():fd_(invalid_fd) {
 
 }
 

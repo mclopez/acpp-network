@@ -19,7 +19,7 @@ TEST(AsyncSocketTests, first)
 
     using namespace acpp::network;
     std::cout << "*** Socket tests" << std::endl;
-    int port = 6664;
+    int port = 6665;
     auto sync_server = [port](){
         std::cout << "sync_server th" << std::endl;
 
@@ -139,15 +139,16 @@ TEST(AsyncSocketTests, first)
                 }
             });
 
-        socket.connect(to_sockaddr(ip4_sockaddress("127.0.0.1", port)));
+        auto c_res = socket.connect(to_sockaddr(ip4_sockaddress("127.0.0.1", port)));
+        std::cout << "Socket connected c_res: " << c_res << std::endl;
         std::string msg("hola!");
         io.wait_for_input();
 
         std::cout << "Socket tests client end" << std::endl;
     };
     
-    std::thread server_th(async_server);
-    std::thread client_th(sync_client);
+    std::thread server_th(sync_server);
+    std::thread client_th(async_client);
     
     std::this_thread::sleep_for(std::chrono::seconds(1));
     //io.stop();

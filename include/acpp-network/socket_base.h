@@ -36,6 +36,13 @@ using in_port_t = decltype(sockaddr_in::sin_port);
 
 namespace acpp::network {
 
+class socket_exception  : public std::exception {
+public:    
+    socket_exception(const std::string& m):m_(m) {}
+    const char* what() const noexcept override { return m_.c_str();};
+private:
+    const std::string m_;
+};
 
 class socket_base {
 public:    
@@ -111,11 +118,10 @@ public:
     size_t write(const char* buffer, size_t);
     void close();
   
-  
     bool valid() const;
     int64_t fd();
 
-    static const int invalid_fd;
+    static const int64_t invalid_fd;
 
 private:
     std::unique_ptr<socket_base_pimpl> pimpl_;
@@ -125,6 +131,7 @@ struct io_context_pimpl;
 
 class io_context {
 public:
+    friend class async_socket_base;
     io_context();
     ~io_context();
 
@@ -135,6 +142,7 @@ public:
     void add_socket(async_socket_base& as);
 
     void stop();
+    int64_t fd() const;
 
 private:
     std::unique_ptr<io_context_pimpl> pimpl_;

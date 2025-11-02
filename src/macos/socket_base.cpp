@@ -4,6 +4,12 @@
 //    (See accompanying file LICENSE or copy at
 //          https://www.mozilla.org/en-US/MPL/2.0/)
 
+#include <iostream>
+
+#include <fcntl.h>
+//#include <sys/types.h>
+#include <sys/event.h>
+//#include <sys/time.h>
 
 #include <acpp-network/socket_base.h>
 
@@ -13,10 +19,23 @@ namespace acpp::network {
 
 const int socket_base::invalid_fd = -1;
 
+
+socket_base::socket_base():fd_(invalid_fd) {
+
+}
+
+socket_base::socket_base(int fd):fd_(fd) {
+}
+
 socket_base::socket_base(socket_base&& other) noexcept 
     : fd_(other.fd_) {
     other.fd_ = -1; // Steal the resource
 }
+
+socket_base::~socket_base() {
+    close();
+}
+
 
 socket_base& socket_base::operator=(socket_base&& other) noexcept {
     if (this != &other) {
@@ -34,15 +53,14 @@ void socket_base::close() {
     }
 }
 
-void socket_base::create_impl(int domain, int type, int protocol, bool non_blocking) {
+void socket_base::create_impl(int domain, int type, int protocol) {
     if (valid())
         close();
-    non_blocking_ = non_blocking;    
     fd_ = ::socket(domain, type, protocol);
 }
 
-bool socket_base::connect(const ) {
-    return ::connect(socket_.fd(), &to_sockaddr(adr), sizeof(sockaddr)) == 0;
+bool socket_base::connect(const sockaddr& adr) {
+    return ::connect(fd_, &adr, sizeof(sockaddr)) == 0;
 }
 
 
@@ -52,6 +70,241 @@ void log_error(const std::string& func) {
     std::cerr << "[POSIX] Error in " << func << ": " << error << std::endl;
 }
 
+struct socket_base_pimpl {
+public:    
+socket_base_pimpl(async_socket_base& parent):fd_(async_socket_base::invalid_fd),io_(nullptr), parent_(&parent){}   
+    int64_t fd_;
+    io_context* io_;
+    async_socket_base* parent_;
+    socket_callbacks callbacks_;
+    bool connected_ = false;
+
+    void set_events(decltype(EVFILT_WRITE) events) {
+        struct kevent ev_set = {0};
+        EV_SET(&ev_set, fd_, events, EV_ADD|EV_ENABLE, 0, 0, (void*)this);
+        kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
+    }
+
+    void set_events_once(decltype(EVFILT_WRITE) events) {
+        struct kevent ev_set = {0};
+        //auto flag = enable ? EV_ENABLE : EV_DISABLE;
+        EV_SET(&ev_set, fd_, events, EV_ADD|EV_ONESHOT, 0, 0, (void*)this);
+        kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
+    }
+
+};
+
+async_socket_base::async_socket_base() {    
+    pimpl_ =  std::make_unique<socket_base_pimpl>(*this);
+}
+
+async_socket_base::async_socket_base(io_context& io, socket_callbacks&& callbacks) {
+    pimpl_ =  std::make_unique<socket_base_pimpl>(*this);
+    pimpl_->io_ = &io;
+    pimpl_->callbacks_ = std::move(callbacks);
+}
+
+async_socket_base::async_socket_base(async_socket_base&& other) noexcept {
+    pimpl_ = std::move(other.pimpl_);
+    pimpl_->parent_ = this;
+    other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
+}
+
+async_socket_base::~async_socket_base() {
+    close(); 
+}
+
+async_socket_base& async_socket_base::operator=(async_socket_base&& other) noexcept {
+    pimpl_ = std::move(other.pimpl_);
+    pimpl_->parent_ = this;
+    other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
+    return *this;
+}
+
+void async_socket_base::create_impl(int domain, int type, int protocol) {
+    if (valid())
+        close();
+    pimpl_->fd_ = ::socket(domain, type, protocol);
+    int flags = fcntl(pimpl_->fd_, F_GETFL, 0);
+    fcntl(pimpl_->fd_, F_SETFL, flags | O_NONBLOCK);
+    pimpl_->io_->add_socket(*this);
+}
+
+bool async_socket_base::bind(const sockaddr& adr) {
+    return ::bind(pimpl_->fd_, &adr, sizeof(sockaddr)) == 0;
+}
+
+int async_socket_base::listen(int backlog) {
+    //TOOD: check vality
+    if (!valid()) {
+        create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
+    }
+    return ::listen(pimpl_->fd_, backlog);
+}
+
+int async_socket_base::accept() {
+    //TOOD: check vality
+    // if (!valid()) {
+    //     create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
+    // }
+    return ::accept(pimpl_->fd_, (struct sockaddr *)NULL, 0);
+}
+
+
+bool async_socket_base::connect(const sockaddr& adr) {
+    if (!valid()) {
+        create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
+    }
+    return ::connect(pimpl_->fd_, &adr, sizeof(sockaddr)) == 0;
+}
+
+void async_socket_base::callbacks(socket_callbacks&& calbacks) {
+    pimpl_->callbacks_ = std::move(calbacks);
+}
+
+socket_callbacks& async_socket_base::callbacks() {
+    return pimpl_->callbacks_;
+}
+
+void async_socket_base::read() {
+    //TOOD: check vality
+    if (!valid()) {
+        throw(socket_exception("Socket not valid"));
+    }
+    //TODO: implement
+    std::cout << "async_socket_base::read set EVFILT_READ" << std::endl;
+    pimpl_->set_events(EVFILT_READ);
+}
+
+size_t async_socket_base::write(const char* buffer, size_t) {
+    //TOOD: check vality
+    if (!valid()) {
+        throw(socket_exception("Socket not valid"));
+    }
+    ::send(pimpl_->fd_, buffer, strlen(buffer), 0);
+    return 0;
+}
+
+void async_socket_base::close() {
+    if (pimpl_ && pimpl_->fd_ != invalid_fd) {
+        ::close(pimpl_->fd_);
+        pimpl_->fd_ = invalid_fd;
+    }
+}
+
+
+bool async_socket_base::valid() const {
+    return (pimpl_->fd_ != invalid_fd);
+}
+
+int64_t async_socket_base::fd() {
+    return pimpl_->fd_;
+}
+
+const int64_t async_socket_base::invalid_fd = -1;
+
+struct io_context_pimpl {
+    std::atomic_bool run;
+    int kq;
+};
+
+io_context::io_context() {
+    pimpl_ = std::make_unique<io_context_pimpl>();
+    pimpl_->kq = kqueue();
+    //TODO: error check
+    if (pimpl_->kq == -1) {
+        log_error("kqueue");
+    }    
+}
+
+io_context::~io_context() {
+    ::close(pimpl_->kq);    
+}
+
+void io_context::wait_for_input() {
+    pimpl_->run = true;
+    while (pimpl_->run) {
+        struct kevent events[5];
+        int nev = kevent(pimpl_->kq, NULL, 0, events, sizeof(events)/sizeof(struct kevent), NULL);
+        if (nev < 0) {
+            log_error("kevent");
+            continue;
+        }
+        for (int i = 0; i < nev; i++) {
+            auto data = (socket_base_pimpl *)events[i].udata;
+            if (events[i].filter == EVFILT_READ) {
+                std::cout << "io_context::wait_for_input EVFILT_READ" << std::endl;
+                if (data->callbacks_.on_received)   {
+                    char buffer[1024];
+                    auto n = ::recv(data->fd_, buffer, sizeof(buffer), 0); 
+                    std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;
+                    if (n>0)    {
+                        data->callbacks_.on_received(*(data->parent_), buffer, n); //TODO: handle n==0 and n<0
+                    } else {
+                        log_error("recv");
+                    }
+
+                }
+            } else if (events[i].filter == EVFILT_WRITE) {
+                std::cout << "io_context::wait_for_input EVFILT_WRITE" << std::endl;
+                if (!data->connected_) {
+                    data->connected_ = true;
+
+                    int err = 0;
+                    socklen_t len = sizeof(err);
+                    getsockopt(data->fd_, SOL_SOCKET, SO_ERROR, &err, &len);
+
+                    if (err == 0) {
+                        std::cout << "✅ Connected!\n";
+                        if (data->callbacks_.on_connected) {
+                            std::cout << "on_connected called\n";
+                            data->callbacks_.on_connected(*(data->parent_));
+                        }
+                        //data->set_events(EVFILT_READ);
+                    } else {
+                        std::cerr << "❌ Connect failed: " << strerror(err) << "\n";
+                    }
+
+
+                } else {
+                    if (data->callbacks_.on_sent) {
+                        data->callbacks_.on_sent(*(data->parent_));
+                    }
+                }
+            }
+        }    
+    }
+}
+
+void io_context::exec(std::function<void()>&&) {
+
+}
+
+void io_context::remove_socket(async_socket_base& as) {
+
+}
+
+void io_context::add_socket(async_socket_base& as) {
+    /*
+    struct kevent ev_set;
+    EV_SET(&ev_set, as.fd(), EVFILT_WRITE
+    //|EVFILT_READ
+    , EV_ADD, 0, 0, (void*)as.pimpl_.get());
+    kevent(pimpl_->kq, &ev_set, 1, NULL, 0, NULL);
+    */
+    as.pimpl_->set_events_once(EVFILT_WRITE);
+
+}
+
+void io_context::stop() {
+    pimpl_->run = false;
+}
+
+
+
+int64_t io_context::fd() const  {
+    return pimpl_->kq;
+}
 
 
 

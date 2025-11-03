@@ -72,16 +72,50 @@ void log_error(const std::string& func) {
 
 struct socket_base_pimpl {
 public:    
-socket_base_pimpl(async_socket_base& parent):fd_(async_socket_base::invalid_fd),io_(nullptr), parent_(&parent){}   
+    int domain_;
+    int type_; 
+    int protocol_;
     int64_t fd_;
     io_context* io_;
     async_socket_base* parent_;
     socket_callbacks callbacks_;
     bool connected_ = false;
+    bool listening_ = false;
+    static const int64_t invalid_fd = -1;
+
+
+    // socket_base_pimpl(async_socket_base& parent)
+    // :fd_(async_socket_base::invalid_fd),io_(nullptr), parent_(&parent){
+
+    // }   
+
+
+    socket_base_pimpl(int domain, int type, int protocol, int fd, io_context& io, socket_callbacks&& callbacks)
+    :   domain_(domain), type_(type), protocol_(protocol), 
+        fd_(fd),
+        io_(&io), callbacks_(std::move(callbacks)) 
+    {
+        if (valid()) {
+            int flags = fcntl(fd_, F_GETFL, 0);
+            fcntl(fd_, F_SETFL, flags | O_NONBLOCK);
+        }
+    }
+
+    socket_base_pimpl(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks)
+    :   domain_(domain), type_(type), protocol_(protocol), 
+        fd_(::socket(domain, type, protocol)),
+        io_(&io), callbacks_(std::move(callbacks)) 
+    {
+        if (valid()) {
+            int flags = fcntl(fd_, F_GETFL, 0);
+            fcntl(fd_, F_SETFL, flags | O_NONBLOCK);
+        }
+    }
+
 
     void set_events(decltype(EVFILT_WRITE) events) {
         struct kevent ev_set = {0};
-        EV_SET(&ev_set, fd_, events, EV_ADD|EV_ENABLE, 0, 0, (void*)this);
+        EV_SET(&ev_set, fd_, events, EV_ADD|EV_ENABLE|EV_CLEAR, 0, 0, (void*)this);
         kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
     }
 
@@ -92,22 +126,73 @@ socket_base_pimpl(async_socket_base& parent):fd_(async_socket_base::invalid_fd),
         kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
     }
 
+    bool bind(const sockaddr& addr) {
+        return ::bind(fd_, &addr, sizeof(sockaddr)) == 0;
+    }
+
+    int listen(int backlog) {
+        set_events(EVFILT_READ);
+        auto res = ::listen(fd_, backlog);
+        if (res == -1) {
+            log_error("listen");
+        }else {
+            listening_ = true;
+            std::cout << "Socket listening on fd " << fd_ << std::endl;
+        }
+        return res;
+    }
+
+    bool connect(const sockaddr& adr) {
+        set_events_once(EVFILT_WRITE);
+        int res = ::connect(fd_, &adr, sizeof(sockaddr));
+
+        return  (res == 0 || errno == EINPROGRESS); 
+    }
+
+    bool valid() const {
+        return (fd_ != invalid_fd);
+    }
+
+    void close() {
+        if (valid()) {
+            ::close(fd_);
+            fd_ = invalid_fd;
+        }
+    }
 };
 
-async_socket_base::async_socket_base() {    
-    pimpl_ =  std::make_unique<socket_base_pimpl>(*this);
+// async_socket_base::async_socket_base() {    
+//     pimpl_ = std::make_unique<socket_base_pimpl>(*this);
+// }
+
+// void async_socket_base::create_impl(int domain, int type, int protocol) {
+//     if (valid())
+//         close();
+//     pimpl_->fd_ = ::socket(domain, type, protocol);
+//     int flags = fcntl(pimpl_->fd_, F_GETFL, 0);
+//     fcntl(pimpl_->fd_, F_SETFL, flags | O_NONBLOCK);
+//     pimpl_->io_->add_socket(*this);
+// }
+
+
+async_socket_base::async_socket_base(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks) {
+    std::cout << "async_socket_base constructor without fd " << (void*) this << std::endl;
+    pimpl_ =  std::make_unique<socket_base_pimpl>(domain, type, protocol, io, std::move(callbacks));
+    pimpl_->parent_ = this;
+    io.add_socket(*this);
 }
 
-async_socket_base::async_socket_base(io_context& io, socket_callbacks&& callbacks) {
-    pimpl_ =  std::make_unique<socket_base_pimpl>(*this);
-    pimpl_->io_ = &io;
-    pimpl_->callbacks_ = std::move(callbacks);
+async_socket_base::async_socket_base(int domain, int type, int protocol, fd_type fd, io_context& io, socket_callbacks&& callbacks) {
+    pimpl_ =  std::make_unique<socket_base_pimpl>(domain, type, protocol, fd, io, std::move(callbacks));
+    pimpl_->parent_ = this;
+    io.add_socket(*this);
 }
 
 async_socket_base::async_socket_base(async_socket_base&& other) noexcept {
     pimpl_ = std::move(other.pimpl_);
     pimpl_->parent_ = this;
-    other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
+    //TODO: should we create a impl?
+    //other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
 }
 
 async_socket_base::~async_socket_base() {
@@ -117,29 +202,18 @@ async_socket_base::~async_socket_base() {
 async_socket_base& async_socket_base::operator=(async_socket_base&& other) noexcept {
     pimpl_ = std::move(other.pimpl_);
     pimpl_->parent_ = this;
-    other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
+    //other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
     return *this;
 }
 
-void async_socket_base::create_impl(int domain, int type, int protocol) {
-    if (valid())
-        close();
-    pimpl_->fd_ = ::socket(domain, type, protocol);
-    int flags = fcntl(pimpl_->fd_, F_GETFL, 0);
-    fcntl(pimpl_->fd_, F_SETFL, flags | O_NONBLOCK);
-    pimpl_->io_->add_socket(*this);
-}
 
 bool async_socket_base::bind(const sockaddr& adr) {
     return ::bind(pimpl_->fd_, &adr, sizeof(sockaddr)) == 0;
+
 }
 
 int async_socket_base::listen(int backlog) {
-    //TOOD: check vality
-    if (!valid()) {
-        create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
-    }
-    return ::listen(pimpl_->fd_, backlog);
+    return pimpl_->listen(backlog);
 }
 
 int async_socket_base::accept() {
@@ -147,15 +221,17 @@ int async_socket_base::accept() {
     // if (!valid()) {
     //     create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
     // }
-    return ::accept(pimpl_->fd_, (struct sockaddr *)NULL, 0);
+    // auto res =  ::accept(pimpl_->fd_, (struct sockaddr *)NULL, 0);
+    // if (res == -1) {
+    //     log_error("accept");
+    // }
+    return 0;
+
 }
 
 
 bool async_socket_base::connect(const sockaddr& adr) {
-    if (!valid()) {
-        create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
-    }
-    return ::connect(pimpl_->fd_, &adr, sizeof(sockaddr)) == 0;
+    return pimpl_->connect(adr);
 }
 
 void async_socket_base::callbacks(socket_callbacks&& calbacks) {
@@ -186,22 +262,23 @@ size_t async_socket_base::write(const char* buffer, size_t) {
 }
 
 void async_socket_base::close() {
-    if (pimpl_ && pimpl_->fd_ != invalid_fd) {
-        ::close(pimpl_->fd_);
-        pimpl_->fd_ = invalid_fd;
+    if (pimpl_) {
+        pimpl_->close();
     }
 }
 
 
 bool async_socket_base::valid() const {
-    return (pimpl_->fd_ != invalid_fd);
+    if (pimpl_) 
+        return pimpl_->valid();
+    return false;
 }
 
 int64_t async_socket_base::fd() {
     return pimpl_->fd_;
 }
 
-const int64_t async_socket_base::invalid_fd = -1;
+//const int64_t socket_base_pimpl::invalid_fd = -1;
 
 struct io_context_pimpl {
     std::atomic_bool run;
@@ -234,7 +311,22 @@ void io_context::wait_for_input() {
             auto data = (socket_base_pimpl *)events[i].udata;
             if (events[i].filter == EVFILT_READ) {
                 std::cout << "io_context::wait_for_input EVFILT_READ" << std::endl;
-                if (data->callbacks_.on_received)   {
+                if (data->listening_) {
+                    // New connection on listening socket
+                    auto new_fd = ::accept(data->fd_, NULL, NULL);
+                    if (new_fd == -1) {
+                        log_error("accept");
+                    } else {
+                        std::cout << "New connection accepted, fd: " << new_fd << std::endl;
+                        if (data->callbacks_.on_accepted) {
+                            async_socket_base new_socket(data->domain_, data->type_, data->protocol_, new_fd, *data->io_, socket_callbacks{});
+                            //new_socket.pimpl_->fd_ = new_fd;
+                            //new_socket.pimpl_->io_ = data->io_;
+                            new_socket.pimpl_->connected_ = true;
+                            data->callbacks_.on_accepted(*data->parent_, std::move(new_socket));
+                        }
+                    }
+                } else if (data->callbacks_.on_received)   {
                     char buffer[1024];
                     auto n = ::recv(data->fd_, buffer, sizeof(buffer), 0); 
                     std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;

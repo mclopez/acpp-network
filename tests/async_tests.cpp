@@ -43,9 +43,11 @@ TEST(AsyncSocketTests, first)
 
         acpp::network::io_context io;
         //std::vector<async_socket_base> sockets;
-        async_socket_base socket;
+        async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io);
+
         std::cout << "async_server th 2" << std::endl;
-        async_socket_base server_socket(io, 
+
+        async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
             socket_callbacks {
                 .on_accepted = [&](async_socket_base& server, async_socket_base&& accepted_socket) {
                     std::cout << "ACCEPTED" << std::endl;
@@ -66,7 +68,7 @@ TEST(AsyncSocketTests, first)
                         }
                     });
                     socket = std::move(accepted_socket);
-                    std::cout << "SERVER socket.callbacks().on_read" << (socket.callbacks().on_received? "read assigned":"read not assigned") << std::endl;
+                    std::cout << "SERVER socket.callbacks().on_read " << (socket.callbacks().on_received? "read assigned":"read not assigned") << std::endl;
 
 
                     socket.read(); //start reading
@@ -75,7 +77,7 @@ TEST(AsyncSocketTests, first)
             }
         );
         std::cout << "async_server th 3" << std::endl;
-        server_socket.create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
+        //server_socket.create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
 
         std::cout << "async_server th 4" << std::endl;
 
@@ -120,34 +122,34 @@ TEST(AsyncSocketTests, first)
     auto async_client = [port](){
         std::cout << "Socket tests client" << std::endl;
         acpp::network::io_context io;
-        async_socket_base socket(io, 
+        async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
             socket_callbacks{
                 .on_connected = [](async_socket_base& s) {
-                    std::cout << "******************************** Socket connected from AsyncSocketTests.first" << std::endl;
+                    std::cout << "CLIENT Socket connected from AsyncSocketTests.first" << std::endl;
                     std::string msg("hola");
                     s.read();
                     s.write(msg.c_str(), msg.size());
                 },
                 .on_received = [&](async_socket_base& s, const char* buf, size_t len){
                     std::string msg(buf, len);
-                    std::cout << "******************************** Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
+                    std::cout << "CLIENT Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
                     EXPECT_EQ(msg, "hola");
                     io.stop();
                 },
                 .on_sent = [](async_socket_base& s){
-                    std::cout << "******************************** Socket sent from AsyncSocketTests.first" << std::endl;
+                    std::cout << "CLIENT Socket sent from AsyncSocketTests.first" << std::endl;
                 }
             });
 
         auto c_res = socket.connect(to_sockaddr(ip4_sockaddress("127.0.0.1", port)));
-        std::cout << "Socket connected c_res: " << c_res << std::endl;
+        std::cout << "CLIENT Socket connected c_res: " << c_res << std::endl;
         std::string msg("hola!");
         io.wait_for_input();
 
-        std::cout << "Socket tests client end" << std::endl;
+        std::cout << "CLIENT Socket tests client end" << std::endl;
     };
     
-    std::thread server_th(sync_server);
+    std::thread server_th(async_server);
     std::thread client_th(async_client);
     
     std::this_thread::sleep_for(std::chrono::seconds(1));

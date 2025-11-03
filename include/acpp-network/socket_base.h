@@ -92,8 +92,11 @@ public:
 class async_socket_base {
 public:
     friend class io_context;
-    async_socket_base();
-    async_socket_base(io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
+
+    using fd_type = int64_t;
+    //async_socket_base();
+    async_socket_base(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
+    async_socket_base(int domain, int type, int protocol, fd_type fd, io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
     async_socket_base(const socket_base&) = delete;
     async_socket_base(async_socket_base&& other) noexcept;
 
@@ -104,16 +107,19 @@ public:
 
     async_socket_base& operator=(async_socket_base&& other) noexcept;
 
-    void create_impl(int domain, int type, int protocol);
+    //void create_impl(int domain, int type, int protocol);
 
     bool bind(const sockaddr& adr);
     int listen(int backlog=0);
+    //TODO: this method should be called in listen. It is not part of the public API
+    // only used in windows
     int accept();
 
     bool connect(const sockaddr& adr);
     void callbacks(socket_callbacks&& calbacks);
     socket_callbacks& callbacks();
 
+    //TODO: move to start_reading()
     void read();
     size_t write(const char* buffer, size_t);
     void close();
@@ -121,7 +127,6 @@ public:
     bool valid() const;
     int64_t fd();
 
-    static const int64_t invalid_fd;
 
 private:
     std::unique_ptr<socket_base_pimpl> pimpl_;

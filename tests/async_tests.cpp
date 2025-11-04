@@ -19,7 +19,7 @@ TEST(AsyncSocketTests, first)
 
     using namespace acpp::network;
     std::cout << "*** Socket tests" << std::endl;
-    int port = 6665;
+    int port = 6666;
     auto sync_server = [port](){
         std::cout << "sync_server th" << std::endl;
 

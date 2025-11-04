@@ -216,20 +216,6 @@ int async_socket_base::listen(int backlog) {
     return pimpl_->listen(backlog);
 }
 
-int async_socket_base::accept() {
-    //TOOD: check vality
-    // if (!valid()) {
-    //     create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
-    // }
-    // auto res =  ::accept(pimpl_->fd_, (struct sockaddr *)NULL, 0);
-    // if (res == -1) {
-    //     log_error("accept");
-    // }
-    return 0;
-
-}
-
-
 bool async_socket_base::connect(const sockaddr& adr) {
     return pimpl_->connect(adr);
 }

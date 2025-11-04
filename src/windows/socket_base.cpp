@@ -124,11 +124,11 @@ public:
 
 struct socket_base_pimpl {
 public:
-    socket_base_pimpl(async_socket_base& parent):fd_(async_socket_base::invalid_fd),io_(nullptr), parent_(&parent){
+    socket_base_pimpl(async_socket_base& parent):fd_(invalid_fd),io_(nullptr), parent_(&parent){
     }
 
     io_context* io_;
-    int64_t fd_ = async_socket_base::invalid_fd; 
+    async_socket_base::fd_type fd_ = invalid_fd; 
 
     socket_callbacks callbacks_;
 
@@ -138,30 +138,148 @@ public:
     write_operation write_op;
     accept_operation accept_op;
     async_socket_base* parent_;
+    static const async_socket_base::fd_type invalid_fd = INVALID_SOCKET;
+
+    int domain_;
+    int type_;
+    int protocol_;
+
+    bool valid() { return fd_ != invalid_fd;}
+
+    socket_base_pimpl(int domain, int type, int protocol, async_socket_base::fd_type fd, io_context& io, socket_callbacks&& callbacks)
+    :   domain_(domain), type_(type), protocol_(protocol), 
+        fd_(fd),
+        io_(&io), callbacks_(std::move(callbacks)) 
+    {
+        if (valid()) {
+            // int flags = fcntl(fd_, F_GETFL, 0);
+            // fcntl(fd_, F_SETFL, flags | O_NONBLOCK);
+        }
+    }
+
+    socket_base_pimpl(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks)
+    :   domain_(domain), type_(type), protocol_(protocol), 
+        //fd_(::socket(domain, type, protocol)),
+        fd_(WSASocket(domain, type, protocol, NULL, 0, WSA_FLAG_OVERLAPPED)),
+        io_(&io), callbacks_(std::move(callbacks)) 
+    {
+        if (valid()) {
+            // int flags = fcntl(fd_, F_GETFL, 0);
+            // fcntl(fd_, F_SETFL, flags | O_NONBLOCK);
+        }
+    }
+
+
+    int listen(int backlog) {
+        //TOOD: check vality
+        auto res = ::listen(fd_, backlog);
+        if (res == SOCKET_ERROR) {
+            log_error("listen");
+            return res;
+        }
+        return start_accept();
+    }
+
+    int start_accept() {
+        //TOOD: check vality
+        // if (!valid()) {
+        //     create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
+        // }
+
+        GUID guidFunc =  WSAID_ACCEPTEX;
+        DWORD bytesReturned = 0;
+        LPFN_ACCEPTEX lpAcceptEx = NULL;
+        
+        WSAIoctl(fd_, SIO_GET_EXTENSION_FUNCTION_POINTER, //SIO_GET_EXTENSION_FUNCTION_POINTER
+            &guidFunc, sizeof(guidFunc),
+            &lpAcceptEx, sizeof(lpAcceptEx),
+            &bytesReturned, NULL, NULL);
+
+        if (lpAcceptEx)    {
+            accept_op.type = operation_type::accept;
+            accept_op.new_socket = std::make_unique<async_socket_base>(domain_, type_, protocol_, *io_, socket_callbacks{});
+
+            DWORD dwLocalAddressLength = sizeof(sockaddr_in) + 16;
+            DWORD dwRemoteAddressLength = sizeof(sockaddr_in) + 16;
+            DWORD lpdwBytesReceived = 0;
+
+            BOOL result = lpAcceptEx(
+                fd_, 
+                accept_op.new_socket->fd(), 
+                &accept_op.buffer, 
+                0, //sizeof(pimpl_->accept_op.buffer) - ((sizeof (sockaddr_in) + 16) * 2), 
+                dwLocalAddressLength, 
+                dwRemoteAddressLength, 
+                &lpdwBytesReceived, 
+                (LPOVERLAPPED)&(accept_op.olOverlap));
+
+
+
+            if (!result) {
+                int err = WSAGetLastError();
+                if (err != ERROR_IO_PENDING) {
+                    printf("lpAcceptEx failed: %d\n", err);
+                    closesocket(fd_);
+                    return err;
+                }
+            }        
+            std::cout << "accept result: " << result << std::endl;
+        } else {
+            std::cout << "accept lpAcceptEx faild: " << std::endl;
+
+        }
+        return 0;
+    }
+
+
+
+    void close() {
+        if (valid()) {
+            ::shutdown(fd_, SD_SEND);
+            ::closesocket(fd_);
+            fd_ = invalid_fd;
+        }
+    }
+
+
 
 private:
 };
 
-const int async_socket_base::invalid_fd = INVALID_SOCKET;
 
 
-async_socket_base::async_socket_base()
-:pimpl_(std::make_unique<socket_base_pimpl>(*this))
+// async_socket_base::async_socket_base()
+// :pimpl_(std::make_unique<socket_base_pimpl>(*this))
+// {
+// }
+
+//    async_socket_base(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
+//    async_socket_base(int domain, int type, int protocol, fd_type fd, io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
+
+
+async_socket_base::async_socket_base(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks)
 {
+    std::cout << "async_socket_base constructor without fd " << (void*) this << std::endl;
+    pimpl_ =  std::make_unique<socket_base_pimpl>(domain, type, protocol, io, std::move(callbacks));
+    pimpl_->parent_ = this;
+    io.add_socket(*this);
 }
 
-async_socket_base::async_socket_base(io_context& io, socket_callbacks&& callbacks)
-:async_socket_base() {
-    pimpl_->callbacks_ = std::move(callbacks);
-    pimpl_->io_ = &io;
+async_socket_base::async_socket_base(int domain, int type, int protocol, fd_type fd, io_context& io, socket_callbacks&& callbacks)
+{
+    std::cout << "async_socket_base constructor without fd " << (void*) this << std::endl;
+    pimpl_ =  std::make_unique<socket_base_pimpl>(domain, type, protocol, fd, io, std::move(callbacks));
+    pimpl_->parent_ = this;
+    io.add_socket(*this);
 }
+
 
 async_socket_base::async_socket_base(async_socket_base&& other) noexcept 
-:async_socket_base()
 {
     pimpl_ = std::move(other.pimpl_);
     pimpl_->parent_ = this;
-    other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
+    //TODO: should we create a impl?
+    //other.pimpl_ = std::make_unique<socket_base_pimpl>(other);
 }
 
 
@@ -175,7 +293,9 @@ int64_t async_socket_base::fd() {
 
 
 bool async_socket_base::valid() const {
-    return (pimpl_->fd_ != invalid_fd);
+    //return (pimpl_->fd_ != invalid_fd);
+    if (pimpl_) return pimpl_->valid();
+    return false;
 }
 
 
@@ -187,19 +307,15 @@ async_socket_base& async_socket_base::operator=(async_socket_base&& other) noexc
 }
 
 
-void async_socket_base::create_impl(int domain, int type, int protocol) {
-    if (valid())
-        close();
-    pimpl_->fd_ = WSASocket(domain, type, protocol, NULL, 0, WSA_FLAG_OVERLAPPED);
-    pimpl_->io_->add_socket(*this);
-}
+// void async_socket_base::create_impl(int domain, int type, int protocol) {
+//     if (valid())
+//         close();
+//     pimpl_->fd_ = WSASocket(domain, type, protocol, NULL, 0, WSA_FLAG_OVERLAPPED);
+//     pimpl_->io_->add_socket(*this);
+// }
 
 void async_socket_base::close() {
-    if (valid()) {
-        ::shutdown(pimpl_->fd_, SD_SEND);
-        ::closesocket(pimpl_->fd_);
-        pimpl_->fd_ = invalid_fd;
-    }
+    if (pimpl_) pimpl_->close();
 }
 
 void async_socket_base::callbacks(socket_callbacks&& callbacks) {
@@ -216,10 +332,10 @@ bool async_socket_base::bind(const sockaddr& addr) {
 }
 
 int async_socket_base::listen(int backlog) {
-    //TOOD: check vality
-    return ::listen(pimpl_->fd_, backlog);
+    return pimpl_->listen(backlog);
 }
 
+/*
 int async_socket_base::accept() {
     //TOOD: check vality
     // if (!valid()) {
@@ -238,8 +354,8 @@ int async_socket_base::accept() {
     if (lpAcceptEx)    {
         //OVERLAPPED overlapped = { 0 };
         pimpl_->accept_op.type = operation_type::accept;
-        pimpl_->accept_op.new_socket = std::make_unique<async_socket_base>(*pimpl_->io_, socket_callbacks{});
-        pimpl_->accept_op.new_socket->create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP); //TODO: make multy protocol
+        pimpl_->accept_op.new_socket = std::make_unique<async_socket_base>(pimpl_->domain_, pimpl_->type_, pimpl_->protocol_, *pimpl_->io_, socket_callbacks{});
+        //pimpl_->accept_op.new_socket->create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP); //TODO: make multy protocol
 
         DWORD dwLocalAddressLength = sizeof(sockaddr_in) + 16;
         DWORD dwRemoteAddressLength = sizeof(sockaddr_in) + 16;
@@ -272,12 +388,12 @@ int async_socket_base::accept() {
     }
     return 0;
 }
-
+*/
 
 bool async_socket_base::connect(const sockaddr& adr) {
-    if (!valid()) {
-        create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
-    }
+    // if (!valid()) {
+    //     create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
+    // }
     SOCKADDR_IN localAddr = { 0 };
     localAddr.sin_family = AF_INET;
     localAddr.sin_addr.s_addr = htonl(INADDR_ANY);

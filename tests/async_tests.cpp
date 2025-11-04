@@ -88,7 +88,7 @@ TEST(AsyncSocketTests, first)
         server_socket.bind(to_sockaddr(addr));
         server_socket.listen(5);
 
-        auto res = server_socket.accept();
+        //auto res = server_socket.accept();
         io.wait_for_input();
 
         //  char buffer[1024];

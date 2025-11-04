@@ -111,9 +111,6 @@ public:
 
     bool bind(const sockaddr& adr);
     int listen(int backlog=0);
-    //TODO: this method should be called in listen. It is not part of the public API
-    // only used in windows
-    int accept();
 
     bool connect(const sockaddr& adr);
     void callbacks(socket_callbacks&& calbacks);

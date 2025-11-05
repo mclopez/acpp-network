@@ -42,8 +42,8 @@ TEST(AsyncSocketTests, first)
         std::cout << "async_server th" << std::endl;
 
         acpp::network::io_context io;
-        //std::vector<async_socket_base> sockets;
-        async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io);
+        std::vector<async_socket_base> sockets;
+        //async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io);
 
         std::cout << "async_server th 2" << std::endl;
 
@@ -55,23 +55,30 @@ TEST(AsyncSocketTests, first)
                         .on_connected = [](async_socket_base& s) {
                             std::cout << "SERVER Async server socket connected" << std::endl;
                         },
+                        .on_disconnected = [&](async_socket_base& s) {
+                            std::cout << "SERVER Async server socket dosconnected" << std::endl;
+                            io.stop();
+                            std::erase_if(sockets, [&](auto& i){
+                                //return i.fd() == s.fd();
+                                return &i == &s;
+                            });
+                        },
                         .on_received = [&](async_socket_base& s, const char* buf, size_t len){
                             std::string msg(buf, len);
                             std::cout << "SERVER  Async server socket  received " << msg << "  from AsyncSocketTests.first" << std::endl;
                             //io.stop();
                             //std::string msg2("hello back!");
                             s.write(msg.c_str(), msg.size());
+                            s.read();
                         },
                         .on_sent = [&](async_socket_base& s){
                             std::cout << "SERVER Async server socket sent from AsyncSocketTests.first" << std::endl;
-                            io.stop();
                         }
                     });
-                    socket = std::move(accepted_socket);
-                    std::cout << "SERVER socket.callbacks().on_read " << (socket.callbacks().on_received? "read assigned":"read not assigned") << std::endl;
+                    sockets.push_back(std::move(accepted_socket));
+                    std::cout << "SERVER socket.callbacks().on_read " << (sockets.back().callbacks().on_received? "read assigned":"read not assigned") << std::endl;
 
-
-                    socket.read(); //start reading
+                    sockets.back().read(); //start reading
                     //sockets.emplace_back(std::move(accepted_socket));
                 }
             }
@@ -97,6 +104,7 @@ TEST(AsyncSocketTests, first)
         //      std::cout << "Server received: " << std::string(buffer, bytes_received) << std::endl;
         //      client_socket.send(buffer, bytes_received); // Echo back
         //  }
+        EXPECT_EQ(sockets.size(), 0);
     };
 
 
@@ -145,6 +153,7 @@ TEST(AsyncSocketTests, first)
         std::cout << "CLIENT Socket connected c_res: " << c_res << std::endl;
         std::string msg("hola!");
         io.wait_for_input();
+        socket.close();
 
         std::cout << "CLIENT Socket tests client end" << std::endl;
     };

@@ -559,7 +559,6 @@ void io_context::wait_for_input() {
                     auto exec_op = std::unique_ptr<execution_operation>((execution_operation*)op);
                     exec_op->fun();
                 }
-
             }
             continue; 
         }
@@ -581,9 +580,13 @@ void io_context::wait_for_input() {
                 socket->callbacks_.on_connected(*socket->parent_);
             }
          }else if (operation->type == operation_type::read) {
+            std::cout <<"***************************************** READ  .... bytesTransferred: " << bytesTransferred << std::endl;
             read_operation& op = *(read_operation*)operation;
             std::string msg(op.buf_info.buf, bytesTransferred);
-            if(socket->callbacks_.on_received) {
+            if (bytesTransferred == 0) {
+                if (socket->callbacks_.on_disconnected) 
+                    socket->callbacks_.on_disconnected(*socket->parent_);
+            } else if(socket->callbacks_.on_received) {
                 socket->callbacks_.on_received(*socket->parent_, op.buf_info.buf, bytesTransferred);
             }
         } else if (operation->type == operation_type::write) {

@@ -84,6 +84,7 @@ public:
     using on_sent_callback = std::function<void(async_socket_base&)>;
 
     on_connected_callback on_connected;
+    on_connected_callback on_disconnected;
     on_received_callback on_received;
     on_sent_callback on_sent;
     on_accepted_callback on_accepted;

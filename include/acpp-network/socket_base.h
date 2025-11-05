@@ -118,7 +118,7 @@ public:
     socket_callbacks& callbacks();
 
     //TODO: move to start_reading()
-    void read();
+    //void read();
     size_t write(const char* buffer, size_t);
     void close();
   

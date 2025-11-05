@@ -69,7 +69,7 @@ TEST(AsyncSocketTests, first)
                             //io.stop();
                             //std::string msg2("hello back!");
                             s.write(msg.c_str(), msg.size());
-                            s.read();
+                            //s.read();
                         },
                         .on_sent = [&](async_socket_base& s){
                             std::cout << "SERVER Async server socket sent from AsyncSocketTests.first" << std::endl;
@@ -78,7 +78,7 @@ TEST(AsyncSocketTests, first)
                     sockets.push_back(std::move(accepted_socket));
                     std::cout << "SERVER socket.callbacks().on_read " << (sockets.back().callbacks().on_received? "read assigned":"read not assigned") << std::endl;
 
-                    sockets.back().read(); //start reading
+                    //sockets.back().read(); //start reading
                     //sockets.emplace_back(std::move(accepted_socket));
                 }
             }
@@ -135,7 +135,7 @@ TEST(AsyncSocketTests, first)
                 .on_connected = [](async_socket_base& s) {
                     std::cout << "CLIENT Socket connected from AsyncSocketTests.first" << std::endl;
                     std::string msg("hola");
-                    s.read();
+                    //s.read();
                     s.write(msg.c_str(), msg.size());
                 },
                 .on_received = [&](async_socket_base& s, const char* buf, size_t len){

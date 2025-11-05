@@ -231,7 +231,32 @@ public:
         return 0;
     }
 
+    void start_read() {
+        auto& op = read_op;
+        op.type = operation_type::read;
+        
+        // Set up the WSABUF
+        op.buf_info.buf = op.buffer;
+        op.buf_info.len = sizeof(op.buffer);
 
+        DWORD flags = 0;
+        DWORD bytes = 0;
+        
+        // WSARecv returns SOCKET_ERROR if the operation is pending (standard for IOCP)
+        if (WSARecv(fd_, 
+                    &(op.buf_info), 
+                    1, 
+                    &bytes, 
+                    &flags, 
+                    (LPOVERLAPPED)&op.olOverlap, 
+                    NULL) == SOCKET_ERROR) 
+        {
+            // Ignore WSA_IO_PENDING (997), which means the operation is running asynchronously
+            if (WSAGetLastError() != WSA_IO_PENDING) {
+                std::cerr << "WSARecv failed: " << WSAGetLastError() << std::endl;
+            }
+        }    
+    }
 
     void close() {
         if (valid()) {
@@ -434,32 +459,6 @@ bool async_socket_base::connect(const sockaddr& adr) {
 }
 
 
-void async_socket_base::read() {
-    auto& op = pimpl_->read_op;
-    op.type = operation_type::read;
-    
-    // Set up the WSABUF
-    op.buf_info.buf = op.buffer;
-    op.buf_info.len = sizeof(op.buffer);
-
-    DWORD flags = 0;
-    DWORD bytes = 0;
-    
-    // WSARecv returns SOCKET_ERROR if the operation is pending (standard for IOCP)
-    if (WSARecv(fd(), 
-                &(op.buf_info), 
-                1, 
-                &bytes, 
-                &flags, 
-                (LPOVERLAPPED)&op.olOverlap, 
-                NULL) == SOCKET_ERROR) 
-    {
-        // Ignore WSA_IO_PENDING (997), which means the operation is running asynchronously
-        if (WSAGetLastError() != WSA_IO_PENDING) {
-            std::cerr << "WSARecv failed: " << WSAGetLastError() << std::endl;
-        }
-    }    
-}
 
 
 size_t async_socket_base::write(const char* buffer, size_t len) {
@@ -571,23 +570,27 @@ void io_context::wait_for_input() {
         // --- Process the Completed I/O Operation ---
         if (operation->type == operation_type::accept) {
             accept_operation& op = (accept_operation&)*operation;
+            op.new_socket->pimpl_->start_read();
             std::string msg(op.buffer, bytesTransferred);
             if(socket->callbacks_.on_accepted) {
                 socket->callbacks_.on_accepted(*socket->parent_, std::move(*op.new_socket));
             }
         } else if (operation->type == operation_type::connect) {
+            socket->start_read();
             if(socket->callbacks_.on_connected) {
                 socket->callbacks_.on_connected(*socket->parent_);
             }
          }else if (operation->type == operation_type::read) {
             std::cout <<"***************************************** READ  .... bytesTransferred: " << bytesTransferred << std::endl;
             read_operation& op = *(read_operation*)operation;
-            std::string msg(op.buf_info.buf, bytesTransferred);
             if (bytesTransferred == 0) {
                 if (socket->callbacks_.on_disconnected) 
                     socket->callbacks_.on_disconnected(*socket->parent_);
-            } else if(socket->callbacks_.on_received) {
-                socket->callbacks_.on_received(*socket->parent_, op.buf_info.buf, bytesTransferred);
+            } else{
+                socket->start_read();
+                if(socket->callbacks_.on_received) {
+                    socket->callbacks_.on_received(*socket->parent_, op.buf_info.buf, bytesTransferred);
+                }
             }
         } else if (operation->type == operation_type::write) {
             if(socket->callbacks_.on_sent) {

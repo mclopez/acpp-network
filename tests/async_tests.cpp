@@ -56,7 +56,7 @@ TEST(AsyncSocketTests, first)
                             std::cout << "SERVER Async server socket connected" << std::endl;
                         },
                         .on_disconnected = [&](async_socket_base& s) {
-                            std::cout << "SERVER Async server socket dosconnected" << std::endl;
+                            std::cout << "SERVER Async server socket disconnected" << std::endl;
                             io.stop();
                             std::erase_if(sockets, [&](auto& i){
                                 //return i.fd() == s.fd();

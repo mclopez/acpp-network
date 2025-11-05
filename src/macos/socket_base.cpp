@@ -228,15 +228,15 @@ socket_callbacks& async_socket_base::callbacks() {
     return pimpl_->callbacks_;
 }
 
-void async_socket_base::read() {
-    //TOOD: check vality
-    if (!valid()) {
-        throw(socket_exception("Socket not valid"));
-    }
-    //TODO: implement
-    std::cout << "async_socket_base::read set EVFILT_READ" << std::endl;
-    pimpl_->set_events(EVFILT_READ);
-}
+// void async_socket_base::read() {
+//     //TOOD: check vality
+//     if (!valid()) {
+//         throw(socket_exception("Socket not valid"));
+//     }
+//     //TODO: implement
+//     std::cout << "async_socket_base::read set EVFILT_READ" << std::endl;
+//     pimpl_->set_events(EVFILT_READ);
+// }
 
 size_t async_socket_base::write(const char* buffer, size_t) {
     //TOOD: check vality
@@ -308,8 +308,10 @@ void io_context::wait_for_input() {
                             async_socket_base new_socket(data->domain_, data->type_, data->protocol_, new_fd, *data->io_, socket_callbacks{});
                             //new_socket.pimpl_->fd_ = new_fd;
                             //new_socket.pimpl_->io_ = data->io_;
+                            new_socket.pimpl_->set_events(EVFILT_READ);
                             new_socket.pimpl_->connected_ = true;
                             data->callbacks_.on_accepted(*data->parent_, std::move(new_socket));
+
                         }
                     }
                 } else if (data->callbacks_.on_received || data->callbacks_.on_disconnected) {  
@@ -339,7 +341,7 @@ void io_context::wait_for_input() {
                             std::cout << "on_connected called\n";
                             data->callbacks_.on_connected(*(data->parent_));
                         }
-                        //data->set_events(EVFILT_READ);
+                        data->set_events(EVFILT_READ);
                     } else {
                         std::cerr << "❌ Connect failed: " << strerror(err) << "\n";
                     }

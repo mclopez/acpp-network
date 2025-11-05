@@ -312,16 +312,17 @@ void io_context::wait_for_input() {
                             data->callbacks_.on_accepted(*data->parent_, std::move(new_socket));
                         }
                     }
-                } else if (data->callbacks_.on_received)   {
+                } else if (data->callbacks_.on_received || data->callbacks_.on_disconnected) {  
                     char buffer[1024];
                     auto n = ::recv(data->fd_, buffer, sizeof(buffer), 0); 
                     std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;
-                    if (n>0)    {
+                    if (n == 0)    {
+                        data->callbacks_.on_disconnected(*(data->parent_)); 
+                    } else if (n > 0)    {
                         data->callbacks_.on_received(*(data->parent_), buffer, n); //TODO: handle n==0 and n<0
                     } else {
                         log_error("recv");
                     }
-
                 }
             } else if (events[i].filter == EVFILT_WRITE) {
                 std::cout << "io_context::wait_for_input EVFILT_WRITE" << std::endl;

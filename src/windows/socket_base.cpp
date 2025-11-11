@@ -492,10 +492,79 @@ size_t async_socket_base::write(const char* buffer, size_t len) {
     return 0;
 }
 
+class cancelable_impl {
+public:
+    void cancel(){
+        DeleteTimerQueueTimer(NULL, handle, NULL);
+    }
+    HANDLE handle;   
+};
+
+cancelable::cancelable()
+:pimpl_(std::make_unique<cancelable_impl>()) {
+
+}
+
+cancelable::cancelable(cancelable &&other) {
+    pimpl_ = std::move(other.pimpl_);
+}
+
+
+
+cancelable::~cancelable(){}
+
+
+void cancelable::cancel(){
+    pimpl_->cancel();
+}
+
+
+void CALLBACK on_timer(PVOID lpParam, BOOLEAN TimerOrWaitFired);
+
 
 struct io_context_pimpl {
     std::atomic_bool run;
     HANDLE hIOCP_ = INVALID_HANDLE_VALUE;
+
+    void exec(std::function<void()>&& f) {
+        auto op = std::make_unique<execution_operation>();
+        //op->type = operation_type::exec;
+        op->fun = std::move(f);
+        if (PostQueuedCompletionStatus(hIOCP_, 0, (ULONG_PTR)nullptr, &op->olOverlap)) {
+            // if posted dont release op
+            op.release();
+        }
+    }
+
+    cancelable exec_in(std::function<void()>&& f, int millisecods ) {
+        auto timer_id = next_timer_id();
+        auto& timer = timers_[timer_id];
+        timer.id = timer_id;
+        timer.callback = std::move(f);
+        timer.io = this;
+
+        CreateTimerQueueTimer(&timers_[timer_id].handle, NULL, on_timer, &timers_[timer_id], millisecods, 0, 0);
+        cancelable c;
+        c.pimpl_->handle = timers_[timer_id].handle;
+        return c;
+    }
+
+    struct timer {
+        //TODO: 
+        using timer_id_type = int;
+        int id;
+        HANDLE handle;
+        std::function<void()> callback;
+        io_context_pimpl* io;
+
+    };
+
+    timer::timer_id_type next_timer_id() {
+        static std::atomic<timer::timer_id_type> current_timer_id;
+        return ++current_timer_id;
+    }
+
+    std::unordered_map<timer::timer_id_type, timer> timers_;
 };
 
 io_context::io_context():pimpl_(std::make_unique<io_context_pimpl>()){
@@ -517,14 +586,22 @@ io_context::~io_context() {
 
 
 void io_context::exec(std::function<void()>&& f) {
-    auto op = std::make_unique<execution_operation>();
-    //op->type = operation_type::exec;
-    op->fun = std::move(f);
-    if (PostQueuedCompletionStatus(pimpl_->hIOCP_, 0, (ULONG_PTR)nullptr, &op->olOverlap)) {
-        // if posted dont release op
-        op.release();
-    }
+    // auto op = std::make_unique<execution_operation>();
+    // //op->type = operation_type::exec;
+    // op->fun = std::move(f);
+    // if (PostQueuedCompletionStatus(pimpl_->hIOCP_, 0, (ULONG_PTR)nullptr, &op->olOverlap)) {
+    //     // if posted dont release op
+    //     op.release();
+    // }
+    pimpl_->exec(std::move(f));
 }
+
+cancelable io_context::exec_in(std::function<void()>&& f, int milliseconds) {
+    return pimpl_->exec_in(std::move(f), milliseconds );
+}
+
+
+
 
 void io_context::wait_for_input() {
     DWORD bytesTransferred = 0;
@@ -703,6 +780,16 @@ void log_error(const std::string& func) {
     std::cerr << "[POSIX] Error in " << func << ": " << error << std::endl;
 }
 
+void CALLBACK on_timer(PVOID lpParam, BOOLEAN TimerOrWaitFired)
+{
+    auto timer = (io_context_pimpl::timer*) lpParam;
+    std::cout << "Timer fired on thread " << GetCurrentThreadId() << " timer->id: "<< timer->id << "\n";
+
+    timer->io->exec([callback = std::move(timer->callback)](){
+        if (callback)  
+            callback();
+    });
+}
 
 
 

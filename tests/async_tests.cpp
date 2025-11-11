@@ -174,26 +174,66 @@ TEST(AsyncSocketTests, first)
 
 TEST(AsyncSocketTests, exec)
 {
-
     using namespace acpp::network;
     std::cout << "*** Socket tests" << std::endl;
     int port = 6664;
     acpp::network::io_context io;
-    auto async_server = [&](){
+    auto async_server = [&]() {
         std::cout << "async_server th" << std::endl;
         //std::vector<async_socket_base> sockets;
         io.wait_for_input();
-
     };
     
     std::thread server_th(async_server);
+
     io.exec([&]{
         std::cout << "exec " <<std::endl;
         io.stop();
     });
+
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    if (server_th.joinable())
+    if (server_th.joinable()) {
         server_th.join();
+    }
+}
+
+
+
+TEST(AsyncSocketTests, timer)
+{
+    using namespace acpp::network;
+    std::cout << "*** Socket tests" << std::endl;
+    int port = 6664;
+    acpp::network::io_context io;
+    auto async_server = [&]() {
+        std::cout << "async_server th" << std::endl;
+        //std::vector<async_socket_base> sockets;
+        io.wait_for_input();
+    };
+    
+    std::thread server_th(async_server);
+
+    auto timer1 = io.exec_in([&]{
+        std::cout << "timer exec 1" <<std::endl;
+    }, 1000);
+
+    auto timer2 = io.exec_in([&]{
+        std::cout << "timer exec 2" <<std::endl;
+    }, 2000);
+
+    auto timer3 = io.exec_in([&]{
+        std::cout << "timer exec 3" <<std::endl;
+        // we stop the service here
+        io.stop();
+    }, 3000);
+
+    timer2.cancel();
+
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    if (server_th.joinable()) {
+        server_th.join();
+    }
 }
 

@@ -93,7 +93,8 @@ public:
 class async_socket_base {
 public:
     friend class io_context;
-
+    friend class io_context_pimpl;
+    
     using fd_type = int64_t;
     //async_socket_base();
     async_socket_base(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
@@ -130,16 +131,38 @@ private:
     std::unique_ptr<socket_base_pimpl> pimpl_;
 };
 
+class cancelable_impl;
+
+class cancelable {
+public:
+    friend class io_context_pimpl;
+    cancelable();
+    cancelable(cancelable&& other);
+    ~cancelable();
+    void cancel();
+private:
+    std::unique_ptr<cancelable_impl> pimpl_;
+};
+
+
 struct io_context_pimpl;
 
 class io_context {
 public:
     friend class async_socket_base;
+    friend class async_socket_base_impl;
+    friend class cancelable_impl;
+
     io_context();
     ~io_context();
 
     void wait_for_input();
     void exec(std::function<void()>&&);
+
+
+
+    cancelable exec_in(std::function<void()>&&, int milliseconds);
+
     void remove_socket(async_socket_base& as);
 
     void add_socket(async_socket_base& as);

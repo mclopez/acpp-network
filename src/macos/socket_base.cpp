@@ -4,12 +4,12 @@
 //    (See accompanying file LICENSE or copy at
 //          https://www.mozilla.org/en-US/MPL/2.0/)
 
-#include <iostream>
-
 #include <fcntl.h>
-//#include <sys/types.h>
 #include <sys/event.h>
-//#include <sys/time.h>
+
+#include <iostream>
+#include <unordered_map>
+
 
 #include <acpp-network/socket_base.h>
 
@@ -71,6 +71,7 @@ void log_error(const std::string& func) {
 }
 
 struct socket_base_pimpl {
+    friend class io_context_pimpl;
 public:    
     int domain_;
     int type_; 
@@ -114,6 +115,7 @@ public:
 
 
     void set_events(decltype(EVFILT_WRITE) events) {
+        std::cout << "socket_base_pimpl::set_events fd: " << fd_ << " events: " << events <<std::endl;
         struct kevent ev_set = {0};
         EV_SET(&ev_set, fd_, events, EV_ADD|EV_ENABLE|EV_CLEAR, 0, 0, (void*)this);
         kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
@@ -264,20 +266,191 @@ int64_t async_socket_base::fd() {
     return pimpl_->fd_;
 }
 
-//const int64_t socket_base_pimpl::invalid_fd = -1;
+
+class cancelable_impl {
+public:
+    cancelable_impl()      
+    : timer_id_(0), kq_(-1) {}
+    void cancel() {
+        struct kevent ev_set = {0};
+        EV_SET(&ev_set, timer_id_, EVFILT_TIMER, EV_DELETE, 0, 0, NULL);
+        kevent(kq_, &ev_set, 1, NULL, 0, NULL);          
+    }
+    void init(size_t id, int kq) {  
+        timer_id_ = id;
+        kq_ = kq;   
+
+    }
+private:
+    size_t timer_id_;
+    int kq_;    
+};
+
+
+void cancelable::cancel() {
+        pimpl_->cancel();
+}
 
 struct io_context_pimpl {
     std::atomic_bool run;
     int kq;
+    std::mutex cb_mutex_;
+    std::queue<std::function<void()>> pending_callbacks_; 
+    std::unordered_map<uintptr_t, std::function<void()>> timer_callbacks_; 
+    constexpr static size_t callback_id = 1;
+    
+    io_context_pimpl() : run(false), kq(-1) {
+        kq = kqueue();
+        //TODO: error check
+        if (kq == -1) {
+            log_error("kqueue");
+        }    
+
+        struct kevent ev_set = {0};
+        EV_SET(&ev_set, callback_id, EVFILT_USER, EV_ADD|EV_CLEAR, 0, 0, nullptr);
+        kevent(kq, &ev_set, callback_id, NULL, 0, NULL);        
+    }
+
+
+    void exec(std::function<void()>&& f) {
+        std::lock_guard<std::mutex> lock(cb_mutex_);
+        pending_callbacks_.push(std::move(f));  
+
+        struct kevent ev_set = {0};
+        EV_SET(&ev_set, 1, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
+        kevent(kq, &ev_set, 1, NULL, 0, NULL);          
+    }
+
+    
+    uintptr_t next_timer_id() {
+        static std::atomic<uintptr_t> timer_id_counter = 0;
+        return ++timer_id_counter;
+    }
+
+    cancelable exec_in(std::function<void()>&& f, int milliseconds) { 
+        struct kevent ev_set = {0};
+        auto timer_id = next_timer_id();
+
+        timer_callbacks_[timer_id] = std::move(f);
+        EV_SET(&ev_set, timer_id, EVFILT_TIMER, EV_ADD|EV_ONESHOT, 0, milliseconds, NULL);
+        kevent(kq, &ev_set, 1, NULL, 0, NULL);    
+        cancelable timer_cancelable; 
+        timer_cancelable.pimpl_->init(timer_id, kq);
+        return timer_cancelable;      
+    }
+
+    void wait_for_input() {
+        run = true;
+        while (run) {
+            struct kevent events[5];
+            int nev = kevent(kq, NULL, 0, events, sizeof(events)/sizeof(struct kevent), NULL);
+            if (nev < 0) {
+                log_error("kevent");
+                continue;
+            }
+            for (int i = 0; i < nev; i++) {
+                auto data = (socket_base_pimpl *)events[i].udata;
+                if (events[i].filter == EVFILT_READ) {
+                    std::cout << "io_context::wait_for_input EVFILT_READ" << std::endl;
+                    if (data->listening_) {
+                        // New connection on listening socket
+                        auto new_fd = ::accept(data->fd_, NULL, NULL);
+                        if (new_fd == -1) {
+                            log_error("accept");
+                        } else {
+                            std::cout << "New connection accepted, fd: " << new_fd << std::endl;
+                            if (data->callbacks_.on_accepted) {
+                                async_socket_base new_socket(data->domain_, data->type_, data->protocol_, new_fd, *data->io_, socket_callbacks{});
+                                //new_socket.pimpl_->fd_ = new_fd;
+                                //new_socket.pimpl_->io_ = data->io_;
+                                new_socket.pimpl_->set_events(EVFILT_READ);
+                                new_socket.pimpl_->connected_ = true;
+                                data->callbacks_.on_accepted(*data->parent_, std::move(new_socket));
+
+                            }
+                        }
+                    } else if (data->callbacks_.on_received || data->callbacks_.on_disconnected) {  
+                        char buffer[1024];
+                        auto n = ::recv(data->fd_, buffer, sizeof(buffer), 0); 
+                        std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;
+                        if (n == 0)    {
+                            data->callbacks_.on_disconnected(*(data->parent_)); 
+                        } else if (n > 0)    {
+                            data->callbacks_.on_received(*(data->parent_), buffer, n); //TODO: handle n==0 and n<0
+                        } else {
+                            log_error("recv");
+                        }
+                    }
+                } else if (events[i].filter == EVFILT_WRITE) {
+                    std::cout << "io_context::wait_for_input EVFILT_WRITE" << std::endl;
+                    if (!data->connected_) {
+                        data->connected_ = true;
+
+                        int err = 0;
+                        socklen_t len = sizeof(err);
+                        getsockopt(data->fd_, SOL_SOCKET, SO_ERROR, &err, &len);
+
+                        if (err == 0) {
+                            std::cout << "✅ Connected!\n";
+                            if (data->callbacks_.on_connected) {
+                                std::cout << "on_connected called\n";
+                                data->callbacks_.on_connected(*(data->parent_));
+                            }
+                            data->set_events(EVFILT_READ);
+                        } else {
+                            std::cerr << "❌ Connect failed: " << strerror(err) << "\n";
+                        }
+
+
+                    } else {
+                        if (data->callbacks_.on_sent) {
+                            data->callbacks_.on_sent(*(data->parent_));
+                        }
+                    }
+                } else if (events[i].filter == EVFILT_USER) {
+                    std::queue<std::function<void()>> tasks;
+                    {
+                        std::lock_guard<std::mutex> lock(cb_mutex_);
+                        std::swap(tasks, pending_callbacks_);
+                    }
+                    while (!tasks.empty()) {
+                        tasks.front()();
+                        tasks.pop();
+                    }
+                } else if (events[i].filter == EVFILT_TIMER) {
+                    std::cout << "io_context::wait_for_input EVFILT_TIMER" << std::endl;
+                    // Timer event
+                    // Execute the associated callback
+                    // For simplicity, we don't store callbacks per timer here
+                    auto timer_id = events[i].ident;
+                    auto& f = timer_callbacks_[timer_id];
+                    if (f) {
+                        f();
+                    }
+                    timer_callbacks_.erase(timer_id);
+                }
+            }    
+        }
+    }
 };
+
+
+
+cancelable::cancelable()
+:pimpl_(std::make_unique<cancelable_impl>()) {
+
+}
+cancelable::cancelable(cancelable &&other) {
+    pimpl_ = std::move(other.pimpl_);
+}
+
+
+
+cancelable::~cancelable(){}
+
 
 io_context::io_context() {
     pimpl_ = std::make_unique<io_context_pimpl>();
-    pimpl_->kq = kqueue();
-    //TODO: error check
-    if (pimpl_->kq == -1) {
-        log_error("kqueue");
-    }    
 }
 
 io_context::~io_context() {
@@ -285,80 +458,15 @@ io_context::~io_context() {
 }
 
 void io_context::wait_for_input() {
-    pimpl_->run = true;
-    while (pimpl_->run) {
-        struct kevent events[5];
-        int nev = kevent(pimpl_->kq, NULL, 0, events, sizeof(events)/sizeof(struct kevent), NULL);
-        if (nev < 0) {
-            log_error("kevent");
-            continue;
-        }
-        for (int i = 0; i < nev; i++) {
-            auto data = (socket_base_pimpl *)events[i].udata;
-            if (events[i].filter == EVFILT_READ) {
-                std::cout << "io_context::wait_for_input EVFILT_READ" << std::endl;
-                if (data->listening_) {
-                    // New connection on listening socket
-                    auto new_fd = ::accept(data->fd_, NULL, NULL);
-                    if (new_fd == -1) {
-                        log_error("accept");
-                    } else {
-                        std::cout << "New connection accepted, fd: " << new_fd << std::endl;
-                        if (data->callbacks_.on_accepted) {
-                            async_socket_base new_socket(data->domain_, data->type_, data->protocol_, new_fd, *data->io_, socket_callbacks{});
-                            //new_socket.pimpl_->fd_ = new_fd;
-                            //new_socket.pimpl_->io_ = data->io_;
-                            new_socket.pimpl_->set_events(EVFILT_READ);
-                            new_socket.pimpl_->connected_ = true;
-                            data->callbacks_.on_accepted(*data->parent_, std::move(new_socket));
-
-                        }
-                    }
-                } else if (data->callbacks_.on_received || data->callbacks_.on_disconnected) {  
-                    char buffer[1024];
-                    auto n = ::recv(data->fd_, buffer, sizeof(buffer), 0); 
-                    std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;
-                    if (n == 0)    {
-                        data->callbacks_.on_disconnected(*(data->parent_)); 
-                    } else if (n > 0)    {
-                        data->callbacks_.on_received(*(data->parent_), buffer, n); //TODO: handle n==0 and n<0
-                    } else {
-                        log_error("recv");
-                    }
-                }
-            } else if (events[i].filter == EVFILT_WRITE) {
-                std::cout << "io_context::wait_for_input EVFILT_WRITE" << std::endl;
-                if (!data->connected_) {
-                    data->connected_ = true;
-
-                    int err = 0;
-                    socklen_t len = sizeof(err);
-                    getsockopt(data->fd_, SOL_SOCKET, SO_ERROR, &err, &len);
-
-                    if (err == 0) {
-                        std::cout << "✅ Connected!\n";
-                        if (data->callbacks_.on_connected) {
-                            std::cout << "on_connected called\n";
-                            data->callbacks_.on_connected(*(data->parent_));
-                        }
-                        data->set_events(EVFILT_READ);
-                    } else {
-                        std::cerr << "❌ Connect failed: " << strerror(err) << "\n";
-                    }
-
-
-                } else {
-                    if (data->callbacks_.on_sent) {
-                        data->callbacks_.on_sent(*(data->parent_));
-                    }
-                }
-            }
-        }    
-    }
+    pimpl_->wait_for_input();
 }
 
-void io_context::exec(std::function<void()>&&) {
+void io_context::exec(std::function<void()>&& f) {
+    pimpl_->exec(std::move(f));
+}
 
+cancelable io_context::exec_in(std::function<void()>&& f, int milliseconds) { 
+    return pimpl_->exec_in(std::move(f), milliseconds);
 }
 
 void io_context::remove_socket(async_socket_base& as) {

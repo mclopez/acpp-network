@@ -82,12 +82,14 @@ public:
     using on_connected_callback = std::function<void(async_socket_base&)>;
     using on_received_callback = std::function<void(async_socket_base&, const char* buffer, size_t length) >;
     using on_sent_callback = std::function<void(async_socket_base&)>;
+    using on_error_callback = std::function<void(async_socket_base&, int error, const std::string& error_message, const std::string& hint)>; 
 
     on_connected_callback on_connected;
     on_connected_callback on_disconnected;
     on_received_callback on_received;
     on_sent_callback on_sent;
     on_accepted_callback on_accepted;
+    on_error_callback on_error;
 };
 
 class async_socket_base {

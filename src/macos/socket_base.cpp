@@ -294,7 +294,8 @@ void cancelable::cancel() {
 struct io_context_pimpl {
     std::atomic_bool run;
     int kq;
-    std::mutex cb_mutex_;
+    std::mutex exec_mutex_;
+    std::mutex timers_mutex_;
     std::queue<std::function<void()>> pending_callbacks_; 
     std::unordered_map<uintptr_t, std::function<void()>> timer_callbacks_; 
     constexpr static size_t callback_id = 1;
@@ -313,9 +314,10 @@ struct io_context_pimpl {
 
 
     void exec(std::function<void()>&& f) {
-        std::lock_guard<std::mutex> lock(cb_mutex_);
-        pending_callbacks_.push(std::move(f));  
-
+        {
+            std::lock_guard<std::mutex> lock(exec_mutex_);
+            pending_callbacks_.push(std::move(f));  
+        }
         struct kevent ev_set = {0};
         EV_SET(&ev_set, 1, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
         kevent(kq, &ev_set, 1, NULL, 0, NULL);          
@@ -330,8 +332,10 @@ struct io_context_pimpl {
     cancelable exec_in(std::function<void()>&& f, int milliseconds) { 
         struct kevent ev_set = {0};
         auto timer_id = next_timer_id();
-
-        timer_callbacks_[timer_id] = std::move(f);
+        {
+            std::lock_guard<std::mutex> lock(timers_mutex_);
+            timer_callbacks_[timer_id] = std::move(f);
+        }
         EV_SET(&ev_set, timer_id, EVFILT_TIMER, EV_ADD|EV_ONESHOT, 0, milliseconds, NULL);
         kevent(kq, &ev_set, 1, NULL, 0, NULL);    
         cancelable timer_cancelable; 
@@ -345,7 +349,7 @@ struct io_context_pimpl {
             struct kevent events[5];
             int nev = kevent(kq, NULL, 0, events, sizeof(events)/sizeof(struct kevent), NULL);
             if (nev < 0) {
-                log_error("kevent");
+                log_error("kevent"); //TODO: proper error handling
                 continue;
             }
             for (int i = 0; i < nev; i++) {
@@ -357,28 +361,31 @@ struct io_context_pimpl {
                         auto new_fd = ::accept(data->fd_, NULL, NULL);
                         if (new_fd == -1) {
                             log_error("accept");
+                            if (data->callbacks_.on_error) {
+                                data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "accept");
+                            }
                         } else {
                             std::cout << "New connection accepted, fd: " << new_fd << std::endl;
                             if (data->callbacks_.on_accepted) {
                                 async_socket_base new_socket(data->domain_, data->type_, data->protocol_, new_fd, *data->io_, socket_callbacks{});
-                                //new_socket.pimpl_->fd_ = new_fd;
-                                //new_socket.pimpl_->io_ = data->io_;
                                 new_socket.pimpl_->set_events(EVFILT_READ);
                                 new_socket.pimpl_->connected_ = true;
                                 data->callbacks_.on_accepted(*data->parent_, std::move(new_socket));
-
                             }
                         }
                     } else if (data->callbacks_.on_received || data->callbacks_.on_disconnected) {  
-                        char buffer[1024];
+                        char buffer[1024]; //TODO: make this dynamic or configurable
                         auto n = ::recv(data->fd_, buffer, sizeof(buffer), 0); 
                         std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;
                         if (n == 0)    {
                             data->callbacks_.on_disconnected(*(data->parent_)); 
                         } else if (n > 0)    {
-                            data->callbacks_.on_received(*(data->parent_), buffer, n); //TODO: handle n==0 and n<0
+                            data->callbacks_.on_received(*(data->parent_), buffer, n); 
                         } else {
                             log_error("recv");
+                            if (data->callbacks_.on_error) {
+                                data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "recv");
+                            }
                         }
                     }
                 } else if (events[i].filter == EVFILT_WRITE) {
@@ -399,9 +406,10 @@ struct io_context_pimpl {
                             data->set_events(EVFILT_READ);
                         } else {
                             std::cerr << "❌ Connect failed: " << strerror(err) << "\n";
+                            if (data->callbacks_.on_error) {
+                                data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "getsockopt");
+                            }
                         }
-
-
                     } else {
                         if (data->callbacks_.on_sent) {
                             data->callbacks_.on_sent(*(data->parent_));
@@ -410,7 +418,7 @@ struct io_context_pimpl {
                 } else if (events[i].filter == EVFILT_USER) {
                     std::queue<std::function<void()>> tasks;
                     {
-                        std::lock_guard<std::mutex> lock(cb_mutex_);
+                        std::lock_guard<std::mutex> lock(exec_mutex_);
                         std::swap(tasks, pending_callbacks_);
                     }
                     while (!tasks.empty()) {
@@ -423,11 +431,15 @@ struct io_context_pimpl {
                     // Execute the associated callback
                     // For simplicity, we don't store callbacks per timer here
                     auto timer_id = events[i].ident;
-                    auto& f = timer_callbacks_[timer_id];
-                    if (f) {
-                        f();
+                    std::function<void()> timer_callback;
+                    {
+                        std::lock_guard<std::mutex> lock(timers_mutex_);
+                        timer_callback = std::move(timer_callbacks_[timer_id]);
+                        timer_callbacks_.erase(timer_id);
                     }
-                    timer_callbacks_.erase(timer_id);
+                    if (timer_callback) {
+                        timer_callback();
+                    }
                 }
             }    
         }

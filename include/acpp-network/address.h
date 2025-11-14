@@ -73,7 +73,7 @@ struct ip4_sockaddress {
 struct ip6_sockaddress {
     ip6_sockaddress() = default;
     ip6_sockaddress(const std::string& ip, in_port_t port) {  
-        std::memset(&addr, 0, sizeof(addr));
+        memset(&addr, 0, sizeof(addr));
         addr.sin6_family = AF_INET6;                 // IPv4
         //addr.sin6_addr.s_addr = htonl(INADDR_LOOPBACK); // Connect to localhost
 

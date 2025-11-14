@@ -90,13 +90,13 @@ void from_sockaddr(const sockaddr& sa, ip4_sockaddress& out_addr) {
     if (sa.sa_family != AF_INET) {
         throw std::invalid_argument("Expected AF_INET sockaddr");
     }
-    std::memcpy(&out_addr.addr, &sa, sizeof(sockaddr_in));
+    memcpy(&out_addr.addr, &sa, sizeof(sockaddr_in));
 }
 void from_sockaddr(const sockaddr& sa, ip6_sockaddress& out_addr) {
     if (sa.sa_family != AF_INET6) {
         throw std::invalid_argument("Expected AF_INET6 sockaddr");
     }
-    std::memcpy(&out_addr.addr, &sa, sizeof(sockaddr_in6));
+    memcpy(&out_addr.addr, &sa, sizeof(sockaddr_in6));
 }
 
 

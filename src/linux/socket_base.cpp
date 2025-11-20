@@ -120,7 +120,7 @@ public:
     bool connected_ = false;
     bool listening_ = false;
     static const int64_t invalid_fd = -1;
-
+    std::vector<char> write_buffer_;
 
 
     socket_base_pimpl(int domain, int type, int protocol, int fd, io_context& io, socket_callbacks&& callbacks)
@@ -155,9 +155,13 @@ public:
 
     bool connect(const sockaddr& adr);
 
+    size_t write(const char* buffer, size_t len);
+    
     bool valid() const {
         return (fd_ != invalid_fd);
     }
+
+
 
     void close() {
         if (valid()) {
@@ -248,13 +252,8 @@ socket_callbacks& async_socket_base::callbacks() {
 //     pimpl_->set_events(EVFILT_READ);
 // }
 
-size_t async_socket_base::write(const char* buffer, size_t) {
-    //TOOD: check vality
-    if (!valid()) {
-        throw(socket_exception("Socket not valid"));
-    }
-    ::send(pimpl_->fd_, buffer, strlen(buffer), 0);
-    return 0;
+size_t async_socket_base::write(const char* buffer, size_t len) {
+    return pimpl_->write(buffer, len);
 }
 
 void async_socket_base::close() {
@@ -475,6 +474,43 @@ bool socket_base_pimpl::connect(const sockaddr& adr) {
 }
 
 
+size_t socket_base_pimpl::write(const char* buffer, size_t len) {
+    std::cout << "*********.  async_socket_base::write sent len: " << len << std::endl;
+    //TOOD: check vality
+    if (!valid()) {
+        throw(socket_exception("Socket not valid"));
+    }
+    while (true) {
+        auto n = ::send(fd_, buffer, len, 0);
+        if (n > 0) {
+            std::cout << "async_socket_base::write sent n: " << n << std::endl;
+            len -= n;
+            buffer += n;    
+            if (len <= 0) {
+                return n;
+            }
+        }    
+        if (n == -1) {
+            if(errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Would block, need to wait for writability    
+                write_buffer_.insert(write_buffer_.end(), buffer, buffer + len);
+                io_->pimpl_->set_events_once(EPOLLOUT, fd_, this);
+                return 0;
+            }
+            log_error("send");
+            if (callbacks_.on_error) {
+                callbacks_.on_error(*parent_, errno, strerror(errno), "send");
+            }
+            return 0;
+        }
+    }
+
+    return 0; //not used
+}
+
+
+
+
 void socket_base_pimpl::handle_event(uint32_t events)  {   
     if (events & EPOLLIN) {
         std::cout << "io_context::wait_for_input EPOLLIN" << std::endl;
@@ -534,7 +570,7 @@ void socket_base_pimpl::handle_event(uint32_t events)  {
             }
         } else {
             if (callbacks_.on_sent) {
-                callbacks_.on_sent(*(parent_));
+                callbacks_.on_sent(*(parent_), 0);
             }
         }
     }  

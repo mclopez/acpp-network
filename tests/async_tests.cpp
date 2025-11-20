@@ -294,10 +294,14 @@ TEST(AsyncSocketTests, large_write_client_server)
                 .on_received = [&](async_socket_base& s, const char* buf, size_t len){
                     std::string msg(buf, len);
                     std::cout << "CLIENT Socket received msg: " << msg << std::endl;
-                    received_msg += msg;
+                    //received_msg = received_msg + msg;
+                    received_msg.insert(received_msg.end(), buf, buf + len);
+                    std::cout << "CLIENT Socket received received_msg.size(): " << received_msg.size() << std::endl;
                     //std::cout << "CLIENT Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
                     if (received_msg.size() >= large_message.size()) {
-                        std::cout << "CLIENT Socket received complete message. \n" << received_msg << std::endl;
+                        std::cout << "CLIENT Socket received complete message. \n" 
+                            //<< received_msg 
+                            << std::endl;
                         EXPECT_EQ(received_msg, large_message);
                         io.stop();
                     }

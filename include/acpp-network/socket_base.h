@@ -85,7 +85,7 @@ public:
     using on_disconnected_callback = std::function<void(async_socket_base&)>;
     using on_connected_callback = std::function<void(async_socket_base&)>;
     using on_received_callback = std::function<void(async_socket_base&, const char* buffer, size_t length) >;
-    using on_sent_callback = std::function<void(async_socket_base&)>;
+    using on_sent_callback = std::function<void(async_socket_base&, size_t lenght)>;
     using on_error_callback = std::function<void(async_socket_base&, int error, const std::string& error_message, const std::string& hint)>; 
 
     on_connected_callback on_connected;
@@ -125,6 +125,8 @@ public:
     void callbacks(socket_callbacks&& calbacks);
     socket_callbacks& callbacks();
 
+    //TOOD: remove return value
+    //TODO: implement max internal buffering
     size_t write(const char* buffer, size_t);
 
     void close();

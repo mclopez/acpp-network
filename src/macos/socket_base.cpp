@@ -103,12 +103,7 @@ public:
     bool connected_ = false;
     bool listening_ = false;
     static const int64_t invalid_fd = -1;
-
-
-    // socket_base_pimpl(async_socket_base& parent)
-    // :fd_(async_socket_base::invalid_fd),io_(nullptr), parent_(&parent){
-
-    // }   
+    std::vector<char> write_buffer_;
 
 
     socket_base_pimpl(int domain, int type, int protocol, int fd, io_context& io, socket_callbacks&& callbacks)
@@ -137,6 +132,7 @@ public:
     void set_events(decltype(EVFILT_WRITE) events) {
         std::cout << "socket_base_pimpl::set_events fd: " << fd_ << " events: " << events <<std::endl;
         struct kevent ev_set = {0};
+        events |= EVFILT_WRITE;
         EV_SET(&ev_set, fd_, events, EV_ADD|EV_ENABLE|EV_CLEAR, 0, 0, (void*)this);
         kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
     }
@@ -144,6 +140,7 @@ public:
     void set_events_once(decltype(EVFILT_WRITE) events) {
         struct kevent ev_set = {0};
         //auto flag = enable ? EV_ENABLE : EV_DISABLE;
+        events |= EVFILT_WRITE;
         EV_SET(&ev_set, fd_, events, EV_ADD|EV_ONESHOT, 0, 0, (void*)this);
         kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
     }
@@ -171,6 +168,40 @@ public:
         return  (res == 0 || errno == EINPROGRESS); 
     }
 
+    size_t write(const char* buffer, size_t len) {
+        std::cout << "*********.  async_socket_base::write sent len: " << len << std::endl;
+        //TOOD: check vality
+        if (!valid()) {
+            throw(socket_exception("Socket not valid"));
+        }
+        while (true) {
+            auto n = ::send(fd_, buffer, len, 0);
+            if (n > 0) {
+                std::cout << "async_socket_base::write sent n: " << n << std::endl;
+                len -= n;
+                buffer += n;    
+                if (len <= 0) {
+                    return n;
+                }
+            }    
+            if (n == -1) {
+                if(errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // Would block, need to wait for writability    
+                    write_buffer_.insert(write_buffer_.end(), buffer, buffer + len);
+                    set_events(EVFILT_WRITE);
+                    return 0;
+                }
+                log_error("send");
+                if (callbacks_.on_error) {
+                    callbacks_.on_error(*parent_, errno, strerror(errno), "send");
+                }
+                return 0;
+            }
+        }
+
+        return 0; //not used
+    }
+
     bool valid() const {
         return (fd_ != invalid_fd);
     }
@@ -182,19 +213,6 @@ public:
         }
     }
 };
-
-// async_socket_base::async_socket_base() {    
-//     pimpl_ = std::make_unique<socket_base_pimpl>(*this);
-// }
-
-// void async_socket_base::create_impl(int domain, int type, int protocol) {
-//     if (valid())
-//         close();
-//     pimpl_->fd_ = ::socket(domain, type, protocol);
-//     int flags = fcntl(pimpl_->fd_, F_GETFL, 0);
-//     fcntl(pimpl_->fd_, F_SETFL, flags | O_NONBLOCK);
-//     pimpl_->io_->add_socket(*this);
-// }
 
 
 async_socket_base::async_socket_base(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks) {
@@ -250,23 +268,8 @@ socket_callbacks& async_socket_base::callbacks() {
     return pimpl_->callbacks_;
 }
 
-// void async_socket_base::read() {
-//     //TOOD: check vality
-//     if (!valid()) {
-//         throw(socket_exception("Socket not valid"));
-//     }
-//     //TODO: implement
-//     std::cout << "async_socket_base::read set EVFILT_READ" << std::endl;
-//     pimpl_->set_events(EVFILT_READ);
-// }
-
-size_t async_socket_base::write(const char* buffer, size_t) {
-    //TOOD: check vality
-    if (!valid()) {
-        throw(socket_exception("Socket not valid"));
-    }
-    ::send(pimpl_->fd_, buffer, strlen(buffer), 0);
-    return 0;
+size_t async_socket_base::write(const char* buffer, size_t len) {
+    return pimpl_->write(buffer, len);
 }
 
 void async_socket_base::close() {
@@ -379,25 +382,46 @@ struct io_context_pimpl {
                             std::cout << "New connection accepted, fd: " << new_fd << std::endl;
                             if (data->callbacks_.on_accepted) {
                                 async_socket_base new_socket(data->domain_, data->type_, data->protocol_, new_fd, *data->io_, socket_callbacks{});
-                                new_socket.pimpl_->set_events(EVFILT_READ);
+                                new_socket.pimpl_->set_events(EVFILT_READ|EVFILT_WRITE);
                                 new_socket.pimpl_->connected_ = true;
                                 data->callbacks_.on_accepted(*data->parent_, std::move(new_socket));
                             }
                         }
                     } else if (data->callbacks_.on_received || data->callbacks_.on_disconnected) {  
                         char buffer[1024]; //TODO: make this dynamic or configurable
-                        auto n = ::recv(data->fd_, buffer, sizeof(buffer), 0); 
-                        std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;
-                        if (n == 0)    {
-                            data->callbacks_.on_disconnected(*(data->parent_)); 
-                        } else if (n > 0)    {
-                            data->callbacks_.on_received(*(data->parent_), buffer, n); 
-                        } else {
-                            log_error("recv");
-                            if (data->callbacks_.on_error) {
-                                data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "recv");
+                        std::cout << "io_context::wait_for_input EVFILT_READ data: " << events[i].data << std::endl;
+                        ssize_t n;
+                        while(true) {
+                            n = ::recv(data->fd_, buffer, sizeof(buffer), 0); 
+                            if (n > 0) {        
+                                std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;
+                                if (data->callbacks_.on_received){
+                                    data->callbacks_.on_received(*(data->parent_), buffer, n); 
+                                }
+                            } else if (n == 0)    {
+                                data->callbacks_.on_disconnected(*(data->parent_)); 
+                                break;
+                            } else if (n == -1) {
+                                if ((errno == EAGAIN || errno == EWOULDBLOCK)) {
+                                    // No more data to read
+                                    break;
+                                }
+                                log_error("recv");
+                                if (data->callbacks_.on_error) {
+                                    data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "recv");
+                                }
+                                break;
                             }
+
+                            // } else if (n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                            //     // No more data to read
+                            //     break;
+                            // } else {
+                            //     break;
+                            // }
+                            //break;
                         }
+
                     }
                 } else if (events[i].filter == EVFILT_WRITE) {
                     std::cout << "io_context::wait_for_input EVFILT_WRITE" << std::endl;
@@ -414,7 +438,7 @@ struct io_context_pimpl {
                                 std::cout << "on_connected called\n";
                                 data->callbacks_.on_connected(*(data->parent_));
                             }
-                            data->set_events(EVFILT_READ);
+                            data->set_events(EVFILT_READ|EVFILT_WRITE);
                         } else {
                             std::cerr << "❌ Connect failed: " << strerror(err) << "\n";
                             if (data->callbacks_.on_error) {
@@ -423,7 +447,7 @@ struct io_context_pimpl {
                         }
                     } else {
                         if (data->callbacks_.on_sent) {
-                            data->callbacks_.on_sent(*(data->parent_));
+                            data->callbacks_.on_sent(*(data->parent_), 0);
                         }
                     }
                 } else if (events[i].filter == EVFILT_USER) {

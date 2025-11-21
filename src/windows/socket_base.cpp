@@ -21,6 +21,7 @@
 
 #include <acpp-network/socket_base.h>
 
+#include <algorithm>
 
 namespace acpp::network {
 
@@ -147,28 +148,33 @@ enum class operation_type {
 struct async_operation {
     WSAOVERLAPPED olOverlap = { 0 };
     operation_type type;
+    bool in_use = false;
 };
 
 struct read_operation: public  async_operation  {
 public:    
+    read_operation() { type = operation_type::read; }
     WSABUF buf_info;
     char buffer[1024];
 };
 
 struct write_operation: public  async_operation  {
 public:    
+    write_operation() { type = operation_type::write; }
     WSABUF buf_info;
     char buffer[1024];
 };
 
 struct connect_operation: public  async_operation  {
 public:    
+    connect_operation() { type = operation_type::connect; }
     WSABUF buf_info;
     char buffer[1024];
 };
 
 struct accept_operation: public  async_operation  {
 public:    
+    accept_operation() { type = operation_type::accept; }
     char buffer[1024];
     std::unique_ptr<async_socket_base> new_socket;
 };
@@ -201,6 +207,7 @@ public:
     int domain_;
     int type_;
     int protocol_;
+    std::vector<char> pending_write_;
 
     bool valid() { return fd_ != invalid_fd;}
 
@@ -308,6 +315,58 @@ public:
             }
         }    
     }
+    size_t internal_write(const char* buffer, size_t len) {
+        auto& op = write_op;
+        //op.type = operation_type::write;// TODO: not need to always set the type
+        auto l = min(sizeof(op.buffer), len);
+        memcpy(op.buffer, buffer, l); 
+        op.buf_info.buf = op.buffer;
+        op.buf_info.len = l;
+        op.in_use = true;
+
+        //DWORD bytes = 0;
+        int res;
+        // WSASend returns SOCKET_ERROR if the operation is pending
+        res = WSASend(fd_,
+            &(op.buf_info),
+            1,
+            NULL, //&bytes, 
+            0, // flags
+            (LPOVERLAPPED)&op.olOverlap,
+            NULL);
+
+        if (res == 0) {
+            //synchronous call... it can't be. this is overlapped op
+        }
+        else if (res == SOCKET_ERROR) {
+            if (WSAGetLastError() != WSA_IO_PENDING) {
+                //std::cerr << "WSASend failed: " << WSAGetLastError() << std::endl;
+                //CleanupContext(clientContext, writeContext);
+                throw socket_exception("WSASend");
+            }
+        }
+        return l;
+    }
+
+    void send_pending() {
+        if (!pending_write_.empty()) {
+            auto n = internal_write(pending_write_.data(), pending_write_.size());
+            pending_write_.erase(pending_write_.begin(), pending_write_.begin() + n);
+        }
+    }
+
+    size_t write(const char* buffer, size_t len) {
+        if (write_op.in_use) {
+            pending_write_.insert(pending_write_.end(), buffer, buffer + len);
+            return 0;
+        }
+        auto n = internal_write(buffer, len);
+        if (n < len) {
+            pending_write_.insert(pending_write_.end(), buffer + n , buffer + len);
+        }
+        return 0;
+    }
+
 
     void close() {
         if (valid()) {
@@ -438,34 +497,7 @@ bool async_socket_base::connect(const sockaddr& addr) {
 
 
 size_t async_socket_base::write(const char* buffer, size_t len) {
-    auto& op = pimpl_->write_op;
-    op.type = operation_type::write;// TODO: not need to always set the type
-    
-    memcpy(op.buffer, buffer, len); //check buffer size!!
-    op.buf_info.buf = op.buffer;
-    op.buf_info.len = len; 
-
-    //DWORD bytes = 0;
-    int res;
-    // WSASend returns SOCKET_ERROR if the operation is pending
-    res = WSASend(fd(), 
-                &(op.buf_info), 
-                1, 
-                NULL, //&bytes, 
-                0, // flags
-                (LPOVERLAPPED)&op.olOverlap, 
-                NULL);
-                
-    if (res == 0) {
-        //synchronous call... it can't be. this is overlapped op
-    } else if (res == SOCKET_ERROR) {
-        if (WSAGetLastError() != WSA_IO_PENDING) {
-            //std::cerr << "WSASend failed: " << WSAGetLastError() << std::endl;
-            //CleanupContext(clientContext, writeContext);
-            throw socket_exception("WSASend");
-        }
-    }    
-    return 0;
+    return pimpl_->write(buffer, len);
 }
 
 class timer_impl {
@@ -682,14 +714,18 @@ void io_context::wait_for_input() {
                 if (socket->callbacks_.on_disconnected) 
                     socket->callbacks_.on_disconnected(*socket->parent_);
             } else{
-                socket->start_read();
                 if(socket->callbacks_.on_received) {
                     socket->callbacks_.on_received(*socket->parent_, op.buf_info.buf, bytesTransferred);
                 }
+                socket->start_read();
             }
         } else if (operation->type == operation_type::write) {
+            write_operation& op = *(write_operation*)operation;
+            op.in_use = false;
+            socket->send_pending();
+
             if(socket->callbacks_.on_sent) {
-                socket->callbacks_.on_sent(*socket->parent_);
+                socket->callbacks_.on_sent(*socket->parent_, 0);
             }
         }
     }

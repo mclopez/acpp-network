@@ -242,7 +242,7 @@ TEST(AsyncSocketTests, large_write_client_server)
                             //io.stop();
                             //std::string msg2("hello back!");
 
-                            sess.received_data += msg;
+                            sess.received_data.insert(sess.received_data.end(), buf, buf+len);
 
                             s.write(buf, len);
 

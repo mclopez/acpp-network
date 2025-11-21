@@ -122,26 +122,46 @@ public:
         fd_(::socket(domain, type, protocol)),
         io_(&io), callbacks_(std::move(callbacks)) 
     {
+        // //TODO: remove this line TEST ONLY!!!!
+
+        std::cout << "Initial SO_SNDBUF fd: " << fd_ << " size: " << get_send_buffer_size() << std::endl;
+        set_send_buffer_size(514);
+        std::cout << "After SO_SNDBUF fd: " << fd_ << " size: " << get_send_buffer_size() << std::endl;
+
+
+
         if (valid()) {
             int flags = fcntl(fd_, F_GETFL, 0);
             fcntl(fd_, F_SETFL, flags | O_NONBLOCK);
         }
     }
+    size_t get_send_buffer_size() {
+        int size;
+        socklen_t size_len = sizeof(size);
+        if (getsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &size, &size_len) < 0) {
+            log_error("getsockopt SO_SNDBUF");
+        }
+        return size;
+    }
 
+    void set_send_buffer_size(int size) {
+        socklen_t size_len = sizeof(size);
+        if (setsockopt(fd_, SOL_SOCKET, SO_SNDBUF, &size, size_len) < 0) {
+            log_error("setsockopt SO_SNDBUF");
+        }
+    }
 
-    void set_events(decltype(EVFILT_WRITE) events) {
-        std::cout << "socket_base_pimpl::set_events fd: " << fd_ << " events: " << events <<std::endl;
+    void ask_read_event() {
+        std::cout << "socket_base_pimpl::ask_read_event fd: " << fd_ <<std::endl;
         struct kevent ev_set = {0};
-        events |= EVFILT_WRITE;
-        EV_SET(&ev_set, fd_, events, EV_ADD|EV_ENABLE|EV_CLEAR, 0, 0, (void*)this);
+        EV_SET(&ev_set, fd_, EVFILT_READ, EV_ADD|EV_ENABLE|EV_CLEAR, 0, 0, (void*)this);
         kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
     }
 
-    void set_events_once(decltype(EVFILT_WRITE) events) {
+    void ask_write_event() {
+        std::cout << "socket_base_pimpl::ask_write_event fd: " << fd_ <<std::endl;
         struct kevent ev_set = {0};
-        //auto flag = enable ? EV_ENABLE : EV_DISABLE;
-        events |= EVFILT_WRITE;
-        EV_SET(&ev_set, fd_, events, EV_ADD|EV_ONESHOT, 0, 0, (void*)this);
+        EV_SET(&ev_set, fd_, EVFILT_WRITE, EV_ADD|EV_ONESHOT, 0, 0, (void*)this);
         kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
     }
 
@@ -150,7 +170,7 @@ public:
     }
 
     int listen(int backlog) {
-        set_events(EVFILT_READ);
+        ask_read_event();
         auto res = ::listen(fd_, backlog);
         if (res == -1) {
             log_error("listen");
@@ -162,46 +182,64 @@ public:
     }
 
     bool connect(const sockaddr& adr) {
-        set_events_once(EVFILT_WRITE);
+        ask_write_event();
         int res = ::connect(fd_, &adr, sizeof(sockaddr));
 
         return  (res == 0 || errno == EINPROGRESS); 
     }
-
-    size_t write(const char* buffer, size_t len) {
-        std::cout << "*********.  async_socket_base::write sent len: " << len << std::endl;
+    void send_pending_data() {
+        if (!write_buffer_.empty()) {
+            auto n = internal_write(write_buffer_.data(), write_buffer_.size(), true);
+            if (n > 0) {
+                write_buffer_.erase(write_buffer_.begin(), write_buffer_.begin() + n);
+            }   
+        }
+    }
+    size_t internal_write(const char* buffer, size_t len, bool is_pending_write) {
+        std::cout << "*********.  async_socket_base::write sent fd: " << fd_ << " len: " << len << " send buffer size: " << get_send_buffer_size() << std::endl;
         //TOOD: check vality
         if (!valid()) {
             throw(socket_exception("Socket not valid"));
         }
+        size_t total_sent = 0;
         while (true) {
             auto n = ::send(fd_, buffer, len, 0);
             if (n > 0) {
                 std::cout << "async_socket_base::write sent n: " << n << std::endl;
+                total_sent += n;
                 len -= n;
                 buffer += n;    
                 if (len <= 0) {
-                    return n;
+                    return total_sent;
                 }
             }    
             if (n == -1) {
                 if(errno == EAGAIN || errno == EWOULDBLOCK) {
                     // Would block, need to wait for writability    
-                    write_buffer_.insert(write_buffer_.end(), buffer, buffer + len);
-                    set_events(EVFILT_WRITE);
-                    return 0;
+                    std::cout << "async_socket_base::write insert into write_buffer_"  << std::endl;
+                    if (!is_pending_write) {
+                        write_buffer_.insert(write_buffer_.end(), buffer, buffer + len);
+                        total_sent += len;
+                    }
+                    ask_write_event();
+                    return total_sent; //remaining bytes
                 }
                 log_error("send");
                 if (callbacks_.on_error) {
                     callbacks_.on_error(*parent_, errno, strerror(errno), "send");
                 }
-                return 0;
+                return total_sent;
             }
         }
 
-        return 0; //not used
+        return total_sent; 
     }
 
+    size_t write(const char* buffer, size_t len) {
+        return internal_write(buffer, len, false);
+    }
+
+    
     bool valid() const {
         return (fd_ != invalid_fd);
     }
@@ -382,13 +420,13 @@ struct io_context_pimpl {
                             std::cout << "New connection accepted, fd: " << new_fd << std::endl;
                             if (data->callbacks_.on_accepted) {
                                 async_socket_base new_socket(data->domain_, data->type_, data->protocol_, new_fd, *data->io_, socket_callbacks{});
-                                new_socket.pimpl_->set_events(EVFILT_READ|EVFILT_WRITE);
+                                new_socket.pimpl_->ask_read_event();
                                 new_socket.pimpl_->connected_ = true;
                                 data->callbacks_.on_accepted(*data->parent_, std::move(new_socket));
                             }
                         }
                     } else if (data->callbacks_.on_received || data->callbacks_.on_disconnected) {  
-                        char buffer[1024]; //TODO: make this dynamic or configurable
+                        char buffer[8 * 1024]; //TODO: make this dynamic or configurable
                         std::cout << "io_context::wait_for_input EVFILT_READ data: " << events[i].data << std::endl;
                         ssize_t n;
                         while(true) {
@@ -424,7 +462,7 @@ struct io_context_pimpl {
 
                     }
                 } else if (events[i].filter == EVFILT_WRITE) {
-                    std::cout << "io_context::wait_for_input EVFILT_WRITE" << std::endl;
+                    std::cout << "io_context::wait_for_input EVFILT_WRITE connected: " << data->connected_ << std::endl;
                     if (!data->connected_) {
                         data->connected_ = true;
 
@@ -438,7 +476,7 @@ struct io_context_pimpl {
                                 std::cout << "on_connected called\n";
                                 data->callbacks_.on_connected(*(data->parent_));
                             }
-                            data->set_events(EVFILT_READ|EVFILT_WRITE);
+                            data->ask_read_event();
                         } else {
                             std::cerr << "❌ Connect failed: " << strerror(err) << "\n";
                             if (data->callbacks_.on_error) {
@@ -446,6 +484,7 @@ struct io_context_pimpl {
                             }
                         }
                     } else {
+                        data->send_pending_data();
                         if (data->callbacks_.on_sent) {
                             data->callbacks_.on_sent(*(data->parent_), 0);
                         }
@@ -532,7 +571,7 @@ void io_context::add_socket(async_socket_base& as) {
     , EV_ADD, 0, 0, (void*)as.pimpl_.get());
     kevent(pimpl_->kq, &ev_set, 1, NULL, 0, NULL);
     */
-    as.pimpl_->set_events_once(EVFILT_WRITE);
+    as.pimpl_->ask_read_event();
 
 }
 

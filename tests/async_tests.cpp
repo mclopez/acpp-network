@@ -203,8 +203,8 @@ TEST(AsyncSocketTests, large_write_client_server)
 
     using namespace acpp::network;
     std::cout << "*** Socket tests" << std::endl;
-    int port = 6665;
-    std::string large_message = random_string(50000); // 5 KB message
+    int port = 6662;
+    std::string large_message = random_string(70 * 1000); // 5 KB message
     std::cout << "Large message: " << large_message << std::endl;
 
     auto async_server = [&](){

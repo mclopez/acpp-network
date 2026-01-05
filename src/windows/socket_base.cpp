@@ -95,6 +95,8 @@ socket_exception::socket_exception(std::string_view hint)
 
 using in_port_t = decltype(sockaddr_in::sin_port);
 
+namespace sync {
+
 
 const int socket_base::invalid_fd = INVALID_SOCKET;
 
@@ -150,6 +152,11 @@ bool socket_base::connect(const sockaddr& adr) {
     return WSAConnect(fd_, &adr, sizeof(sockaddr), NULL, NULL, NULL, NULL) == 0;
 
 }
+
+} //namespace sync
+
+
+namespace async {
 
 enum class operation_type {
     connect, read, write, accept, exec,
@@ -820,6 +827,6 @@ void CALLBACK on_timer(PVOID lpParam, BOOLEAN TimerOrWaitFired)
     });
 }
 
-
+} //namespace async
 
 } // namespace acpp::network 

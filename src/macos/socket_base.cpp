@@ -17,6 +17,12 @@
 
 namespace acpp::network {
 
+void log_error_func(const std::string& func) {
+    std::string error;
+    error = strerror(errno);    
+    log_error(std::format("[POSIX] Error in {}: {}", func, error));
+}
+
 
 socket_exception::socket_exception(int error_code, const std::string_view hint) {
     error_code_ = error_code;
@@ -35,7 +41,7 @@ socket_exception::socket_exception(const std::string_view hint) {
     msg_ = ss.str();
 }
 
-
+namespace sync {
 
 const int socket_base::invalid_fd = -1;
 
@@ -83,13 +89,9 @@ bool socket_base::connect(const sockaddr& adr) {
     return ::connect(fd_, &adr, sizeof(sockaddr)) == 0;
 }
 
+} //namespace sync
 
-void log_error_func(const std::string& func) {
-    std::string error;
-    error = strerror(errno);    
-    log_error(std::format("[POSIX] Error in {}: {}", func, error));
-}
-
+namespace async {
 
 struct socket_base_pimpl {
     friend class io_context_pimpl;
@@ -198,58 +200,6 @@ public:
         return  (res == 0 || errno == EINPROGRESS); 
     }
 
-/*    void send_pending_data() {
-        if (!write_buffer_.empty()) {
-            auto n = internal_write(write_buffer_.data(), write_buffer_.size(), true);
-            if (n > 0) {
-                write_buffer_.erase(write_buffer_.begin(), write_buffer_.begin() + n);
-            }   
-        }
-    }
-    size_t internal_write(const char* buffer, size_t len, bool is_pending_write) {
-        std::cout << "*********.  async_socket_base::write sent fd: " << fd_ << " len: " << len << " send buffer size: " << get_send_buffer_size() << std::endl;
-        //TOOD: check vality
-        if (!valid()) {
-            throw(socket_exception("Socket not valid"));
-        }
-        size_t total_sent = 0;
-        while (true) {
-            auto n = ::send(fd_, buffer, len, 0);
-            if (n > 0) {
-                std::cout << "async_socket_base::write sent n: " << n << std::endl;
-                total_sent += n;
-                len -= n;
-                buffer += n;    
-                if (len <= 0) {
-                    return total_sent;
-                }
-            }    
-            if (n == -1) {
-                if(errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // Would block, need to wait for writability    
-                    std::cout << "async_socket_base::write insert into write_buffer_"  << std::endl;
-                    if (!is_pending_write) {
-                        write_buffer_.insert(write_buffer_.end(), buffer, buffer + len);
-                        total_sent += len;
-                    }
-                    ask_write_event();
-                    return total_sent; //remaining bytes
-                }
-                log_error_func("send");
-                if (callbacks_.on_error) {
-                    callbacks_.on_error(*parent_, errno, strerror(errno), "send");
-                }
-                return total_sent;
-            }
-        }
-
-        return total_sent; 
-    }
-
-    size_t write(const char* buffer, size_t len) {
-        return internal_write(buffer, len, false);
-    }
-*/
 
 size_t write(const char* buffer, size_t len) {
     //return write_buffer_.write(buffer, len);
@@ -259,6 +209,7 @@ size_t write(const char* buffer, size_t len) {
 size_t so_write(const char* buffer, size_t len) {
     size_t result = 0;
     while(true) {
+        //TODO: remove this limit 
         ssize_t len_aux = std::min(len, (size_t)1024 * 4); 
         auto n = so_write_internal(buffer, len_aux);
         if (n == 0) {
@@ -266,7 +217,7 @@ size_t so_write(const char* buffer, size_t len) {
         }
         result = result + n;
         buffer = buffer + n;
-        len = len -n;
+        len = len - n;
     }
     return result;
 }
@@ -644,6 +595,7 @@ int64_t io_context::fd() const  {
     return pimpl_->kq_;
 }
 
+} // namespace async
 
 
 } //namespace acpp::network

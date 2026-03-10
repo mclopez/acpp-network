@@ -50,6 +50,7 @@ socket_exception::socket_exception(std::string_view hint)
 {
 }
 
+namespace sync {
 
 
 const int socket_base::invalid_fd = -1;
@@ -99,7 +100,9 @@ bool socket_base::connect(const sockaddr& adr) {
 }
 
 
+} // namespace sync
 
+namespace async {
 
 class event_handler{
 public:
@@ -702,6 +705,6 @@ int64_t io_context::fd() const  {
     return pimpl_->epollfd;
 }
 
-
+} //namespace async
 
 } //namespace acpp::network

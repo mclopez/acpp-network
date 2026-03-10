@@ -8,16 +8,20 @@
 
 #ifdef _WIN32
 
-// #include <winsock2.h>
-// #include <ws2tcpip.h>
-// #include <iphlpapi.h>
-// #include <ws2def.h>
-// #pragma comment(lib, "Ws2_32.lib")
-// #include <windows.h>
-// #include <io.h>
-// #include <mswsock.h>
+#define NOMINMAX
 
-// using in_port_t = decltype(sockaddr_in::sin_port);
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <ws2def.h>
+#pragma comment(lib, "Ws2_32.lib")
+
+#include <windows.h>
+
+#include <io.h>
+#include <mswsock.h>
+
+using in_port_t = decltype(sockaddr_in::sin_port);
 
 #else
 //TODO: remove shis headers
@@ -33,13 +37,13 @@
 
 #include <memory>
 #include <functional>
-
+#include <string_view>
+#include <string>
 
 
 
 namespace acpp::network {
 
-void log_debug(const std::string& msg);
 
 
 class socket_exception  : public std::exception {
@@ -52,6 +56,8 @@ private:
     std::string msg_;
     int error_code_;
 };
+
+namespace sync {
 
 class socket_base {
 public:    
@@ -79,6 +85,10 @@ private:
     static const int invalid_fd;
     int64_t fd_ = invalid_fd; 
 };
+
+} //namespace sync
+
+namespace async {
 
 class io_context;
 class async_socket_base;
@@ -112,7 +122,7 @@ public:
     //async_socket_base();
     async_socket_base(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
     async_socket_base(int domain, int type, int protocol, fd_type fd, io_context& io, socket_callbacks&& callbacks = socket_callbacks{});
-    async_socket_base(const socket_base&) = delete;
+    async_socket_base(const sync::socket_base&) = delete;
     async_socket_base(async_socket_base&& other) noexcept;
 
     ~async_socket_base();
@@ -191,6 +201,6 @@ private:
 };
 
 
-
+}// namespace async
 
 } //namespace acpp::network 

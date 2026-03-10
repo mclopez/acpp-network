@@ -10,6 +10,8 @@ add_executable(acpp-network-tests
     main.cpp
     socket_tests.cpp
     async_tests.cpp
+    ssl_tests.cpp
+    stream_tests.cpp
 )
 
 target_include_directories(acpp-network-tests 
@@ -25,6 +27,7 @@ target_link_libraries(acpp-network-tests
 PRIVATE
     gtest::gtest
     spdlog::spdlog
+    openssl::openssl
 )
 
 # Add tests

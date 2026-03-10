@@ -24,7 +24,7 @@ namespace acpp::network {
 
 
 
-//const sockaddr& to_sockaddr(const ip_socketaddress& addr);
+namespace sync {
 
 template<typename Address, int Protocol = 0>
 class stream_socket {
@@ -85,7 +85,9 @@ using resolve_address_callback = std::function<void(SocketAddress& addr, bool& s
 template<typename Socket, typename Address = Socket::address_type>
 void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<Address>&& callback);
 
+} // namespace sync
 
+/*
 template<typename Address, int Protocol = 0>
 class async_stream_socket {
 public:
@@ -111,7 +113,7 @@ private:
     socket_base socket_;
 };
 
-
+*/
 
 
 } // namespace acpp::network 

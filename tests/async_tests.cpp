@@ -20,7 +20,7 @@ TEST(AsyncSocketTests, simple_client_server)
     auto sync_server = [port](){
         std::cout << "sync_server th" << std::endl;
 
-        stream_socket<ip_socketaddress> server_socket;
+        sync::stream_socket<ip_socketaddress> server_socket;
 
         ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port);
 
@@ -38,21 +38,21 @@ TEST(AsyncSocketTests, simple_client_server)
     auto async_server = [port](){
         std::cout << "async_server th" << std::endl;
 
-        acpp::network::io_context io;
-        std::vector<async_socket_base> sockets;
+        acpp::network::async::io_context io;
+        std::vector<async::async_socket_base> sockets;
         //async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io);
 
         std::cout << "async_server th 2" << std::endl;
 
-        async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
-            socket_callbacks {
-                .on_accepted = [&](async_socket_base& server, async_socket_base&& accepted_socket) {
+        async::async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
+            async::socket_callbacks {
+                .on_accepted = [&](async::async_socket_base& server, async::async_socket_base&& accepted_socket) {
                     std::cout << "ACCEPTED" << std::endl;
-                    accepted_socket.callbacks(socket_callbacks {
-                        .on_connected = [](async_socket_base& s) {
+                    accepted_socket.callbacks(async::socket_callbacks {
+                        .on_connected = [](async::async_socket_base& s) {
                             std::cout << "SERVER Async server socket connected" << std::endl;
                         },
-                        .on_disconnected = [&](async_socket_base& s) {
+                        .on_disconnected = [&](async::async_socket_base& s) {
                             std::cout << "SERVER Async server socket disconnected" << std::endl;
                             io.stop();
                             std::erase_if(sockets, [&](auto& i){
@@ -60,7 +60,7 @@ TEST(AsyncSocketTests, simple_client_server)
                                 return &i == &s;
                             });
                         },
-                        .on_received = [&](async_socket_base& s, const char* buf, size_t len){
+                        .on_received = [&](async::async_socket_base& s, const char* buf, size_t len){
                             std::string msg(buf, len);
                             std::cout << "SERVER  Async server socket  received " << msg << "  from AsyncSocketTests.first" << std::endl;
                             //io.stop();
@@ -68,7 +68,7 @@ TEST(AsyncSocketTests, simple_client_server)
                             s.write(msg.c_str(), msg.size());
                             //s.read();
                         },
-                        .on_sent = [&](async_socket_base& s, size_t length) {
+                        .on_sent = [&](async::async_socket_base& s, size_t length) {
                             std::cout << "SERVER Async server socket sent from AsyncSocketTests.first: length:" << length << std::endl;
                         }
                     });
@@ -107,7 +107,7 @@ TEST(AsyncSocketTests, simple_client_server)
 
     auto sync_client = ([port](){
        std::cout << "Socket tests client" << std::endl;
-       stream_socket<ip_socketaddress> socket;
+       sync::stream_socket<ip_socketaddress> socket;
        ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port);
 
        socket.connect(adr);
@@ -126,25 +126,25 @@ TEST(AsyncSocketTests, simple_client_server)
 
     auto async_client = [port](){
         std::cout << "Socket tests client" << std::endl;
-        acpp::network::io_context io;
-        async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
-            socket_callbacks {
-                .on_connected = [](async_socket_base& s) {
+        acpp::network::async::io_context io;
+        async::async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
+            async::socket_callbacks {
+                .on_connected = [](async::async_socket_base& s) {
                     std::cout << "CLIENT Socket connected from AsyncSocketTests.first" << std::endl;
                     std::string msg("hola");
                     //s.read();
                     s.write(msg.c_str(), msg.size());
                 },
-                .on_received = [&](async_socket_base& s, const char* buf, size_t len){
+                .on_received = [&](async::async_socket_base& s, const char* buf, size_t len){
                     std::string msg(buf, len);
                     std::cout << "CLIENT Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
                     EXPECT_EQ(msg, "hola");
                     io.stop();
                 },
-                .on_sent = [](async_socket_base& s, size_t length) {
+                .on_sent = [](async::async_socket_base& s, size_t length) {
                     std::cout << "CLIENT Socket sent from AsyncSocketTests.fir st" << std::endl;
                 },
-                .on_error = [](async_socket_base& s, int error_code, const std::string& msg, const std::string& hint) {
+                .on_error = [](async::async_socket_base& s, int error_code, const std::string& msg, const std::string& hint) {
                     std::cout << "CLIENT Socket error from AsyncSocketTests.first error_code: " 
                         << error_code << " msg: " << msg << " hint: " << hint 
                         << std::endl;
@@ -194,9 +194,9 @@ std::string random_string(size_t length,
 
 struct large_write_client_server_sesson {
 public:
-    large_write_client_server_sesson(acpp::network::async_socket_base&& s):socket(std::move(s)){}
+    large_write_client_server_sesson(acpp::network::async::async_socket_base&& s):socket(std::move(s)){}
     ~large_write_client_server_sesson() = default;
-    acpp::network::async_socket_base socket;
+    acpp::network::async::async_socket_base socket;
     std::string received_data;
     std::string pending_data;
 
@@ -214,26 +214,26 @@ TEST(AsyncSocketTests, large_write_client_server)
     std::atomic_bool listen_ok = false;
     auto async_server = [&](){
 
-        acpp::network::io_context io;
+        acpp::network::async::io_context io;
         using session = large_write_client_server_sesson;
         std::vector<std::unique_ptr<session>> sessions;
         //async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io);
 
         size_t total = 0;
         size_t total_sent = 0;
-        async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
-            socket_callbacks {
-                .on_accepted = [&](async_socket_base& server, async_socket_base&& accepted_socket) {
+        async::async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
+            async::socket_callbacks {
+                .on_accepted = [&](async::async_socket_base& server, async::async_socket_base&& accepted_socket) {
                     sessions.emplace_back(std::make_unique<session>(std::move(accepted_socket)));
                     auto& sess = *sessions.back();
 
                     std::cout << "SERVER ACCEPTED" << std::endl;
-                    sess.socket.callbacks(socket_callbacks {
-                        .on_connected = [&](async_socket_base& s) {
+                    sess.socket.callbacks(async::socket_callbacks {
+                        .on_connected = [&](async::async_socket_base& s) {
                             //std::cout << "SERVER connected fd:" << s.fd() << std::endl;
                             log_debug("SERVER connected fd:" + std::to_string(s.fd()));
                         },
-                        .on_disconnected = [&](async_socket_base& s) {
+                        .on_disconnected = [&](async::async_socket_base& s) {
                             log_debug("SERVER disconnected fd:" + std::to_string(s.fd()));
                             io.stop();
                             std::erase_if(sessions, [&](auto& i){
@@ -241,7 +241,7 @@ TEST(AsyncSocketTests, large_write_client_server)
                                 return &(*i) == &sess;
                             });
                         },
-                        .on_received = [&](async_socket_base& s, const char* buf, size_t len){
+                        .on_received = [&](async::async_socket_base& s, const char* buf, size_t len){
                             total = total + len;
                             log_debug(std::format("SERVER received fd: {} total: {}", s.fd(), total));
 
@@ -262,7 +262,7 @@ TEST(AsyncSocketTests, large_write_client_server)
                             }
 
                         },
-                        .on_sent = [&](async_socket_base& s, size_t length) {
+                        .on_sent = [&](async::async_socket_base& s, size_t length) {
                             //log_debug("SERVER on_sent fd:" + std::to_string(s.fd()) + " "  + std::to_string(length));
                             if (!sess.pending_data.empty()) {
                                 auto n = s.write(sess.pending_data.c_str(), sess.pending_data.size());
@@ -294,17 +294,17 @@ TEST(AsyncSocketTests, large_write_client_server)
         while(!listen_ok) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        acpp::network::io_context io;
+        acpp::network::async::io_context io;
         std::string received_msg;
         size_t total_sent = 0;
-        async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
-            socket_callbacks {
-                .on_connected = [&](async_socket_base& s) {
+        async::async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
+            async::socket_callbacks {
+                .on_connected = [&](async::async_socket_base& s) {
                     log_debug("CLIENT Socket connected from AsyncSocketTests.first");
                     total_sent = s.write(large_message.c_str(), large_message.size());
                     log_debug("CLIENT Socket sent initial : " +  std::to_string(total_sent));
                 },
-                .on_received = [&](async_socket_base& s, const char* buf, size_t len){
+                .on_received = [&](async::async_socket_base& s, const char* buf, size_t len){
                     std::string msg(buf, len);
                     //std::cout << "CLIENT Socket received msg: " << msg << std::endl;
                     received_msg.insert(received_msg.end(), buf, buf + len);
@@ -320,12 +320,12 @@ TEST(AsyncSocketTests, large_write_client_server)
                     }
                 },
                 /* 3307136 -3308160*/ 
-                .on_sent = [&](async_socket_base& s, size_t length) {
+                .on_sent = [&](async::async_socket_base& s, size_t length) {
                     log_debug("CLIENT sent length: " + std::to_string(length));
                     auto n = s.write(large_message.c_str() + total_sent, large_message.size() - total_sent);
                     total_sent = total_sent + n;
                 },
-                .on_error = [](async_socket_base& s, int error_code, const std::string& msg, const std::string& hint) {
+                .on_error = [](async::async_socket_base& s, int error_code, const std::string& msg, const std::string& hint) {
                     log_debug("CLIENT Socket error from AsyncSocketTests.first error_code: " 
                         + std::to_string(error_code) + " msg: " + msg + " hint: " +  hint );
                 }
@@ -360,7 +360,7 @@ TEST(AsyncSocketTests, exec)
     using namespace acpp::network;
     std::cout << "*** Socket tests" << std::endl;
     int port = 6664;
-    acpp::network::io_context io;
+    acpp::network::async::io_context io;
     auto async_server = [&]() {
         std::cout << "async_server th" << std::endl;
         //std::vector<async_socket_base> sockets;
@@ -426,7 +426,7 @@ TEST(AsyncSocketTests, timer2)
     using namespace acpp::network;
     std::cout << "*** Socket tests" << std::endl;
     int port = 6664;
-    acpp::network::io_context io;
+    acpp::network::async::io_context io;
     std::atomic_bool t1_called = false;
     std::atomic_bool t2_called = false;
     std::atomic_bool t3_called = false;
@@ -434,17 +434,17 @@ TEST(AsyncSocketTests, timer2)
     auto async_server = [&]() {
         std::cout << "async_server th" << std::endl;
 
-        timer t1(io, 1, [&](timer& t) {
+        async::timer t1(io, 1, [&](async::timer& t) {
             std::cout << "timer t1 expired" <<std::endl;
             t1_called = true;
         });
 
-        timer t2(io, 100, [&](timer& t) {
+        async::timer t2(io, 100, [&](async::timer& t) {
             std::cout << "timer t2 expired" <<std::endl;
             t2_called = true;
         });
 
-        timer t3(io, 200, [&](timer& t) {
+        async::timer t3(io, 200, [&](async::timer& t) {
             std::cout << "timer t3 expired" <<std::endl;
             t3_called = true;
             io.stop();

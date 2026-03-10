@@ -12,7 +12,7 @@
 
 namespace acpp::network {
 
-
+namespace sync {
 
 template<typename Address, int Protocol>
 stream_socket<Address, Protocol>::stream_socket(int fd):socket_(fd) {
@@ -182,14 +182,15 @@ void resolve_host(const std::string& host, const std::string& service, resolve_a
     }   
 }
 
+} //namespace sync
 
-
+/*
 template<typename Address, int Protocol>
 bool async_stream_socket<Address, Protocol>::connect(const address_type& adr) {
     socket_.create_impl(get_family(adr), SOCK_STREAM, protocol, true);
     return ::connect(socket_.fd(), &to_sockaddr(adr), sizeof(sockaddr)) == 0;
 }
-
+*/
 
 
 } //namespace acpp::network 

@@ -10,6 +10,8 @@ set(VERBOSE ON)
 
 find_package(GTest REQUIRED)
 find_package(spdlog REQUIRED)
+find_package(OpenSSL REQUIRED)
+
 
 
 

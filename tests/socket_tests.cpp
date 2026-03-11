@@ -10,10 +10,10 @@
 TEST(SocketTests, tcp_echo)
 {
     using namespace acpp::network;
-    std::cout << "*** Socket tests" << std::endl;
+    LOG_DEBUG("*** Socket tests");
     int port = 6664;
     std::thread server_th([port](){
-        std::cout << "Socket tests th" << std::endl;
+        LOG_DEBUG("Socket tests th");
 
         sync::stream_socket<ip_socketaddress> server_socket;
 
@@ -26,13 +26,13 @@ TEST(SocketTests, tcp_echo)
          char buffer[1024];
          auto bytes_received = client_socket.receive(buffer, sizeof(buffer));
          if (bytes_received > 0) {
-             std::cout << "Server received: " << std::string(buffer, bytes_received) << std::endl;
+             LOG_DEBUG("Server received: {}", std::string(buffer, bytes_received));
              client_socket.send(buffer, bytes_received); // Echo back
          }
     });
 
     std::thread client_th([port](){
-       std::cout << "Socket tests client" << std::endl;
+       LOG_DEBUG("Socket tests client");
        sync::stream_socket<ip_socketaddress> socket;
        ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port);
 
@@ -43,7 +43,7 @@ TEST(SocketTests, tcp_echo)
        auto bytes_received = socket.receive(buffer, sizeof(buffer));
        if (bytes_received > 0) {
            std::string msg(buffer, bytes_received);
-           std::cout << "Client received: " << msg << std::endl;
+           LOG_DEBUG("Client received: {}", msg);
            EXPECT_EQ(msg, "Hello, Echo Server!");
        }
     });
@@ -76,18 +76,18 @@ TEST(SocketTests, ip)
 }
 
 
- TEST(SocketTests, DISABLED_resolve_host)
+ TEST(SocketTests, resolve_host)
  {
-        using namespace acpp::network;
-        using tcp_socket = sync::stream_socket<ip_socketaddress>;
-        sync::resolve_host<tcp_socket, tcp_socket::address_type>("www.example.com", "80", [](const ip_socketaddress& addr, bool& success){
-        std::cout << "Resolved: "  << ":" << to_string(addr) << std::endl;
+    using namespace acpp::network;
+    using tcp_socket = sync::stream_socket<ip_socketaddress>;
+    sync::resolve_host<tcp_socket, tcp_socket::address_type>("badssl.com", "80", [](const ip_socketaddress& addr, bool& success){
+        LOG_DEBUG("Resolved: {}", to_string(addr));
         tcp_socket socket;   
         success = socket.connect(addr);
         if (success) {
             std::string msg = 
                 "GET / HTTP/1.1\r\n" 
-                "Host: www.example.com\r\n" 
+                "Host: badssl.com\r\n" 
                 "User-Agent: Mozilla/5.0\r\n" 
                 "Accept: */*\r\n" 
                 "Connection: close\r\n\r\n";
@@ -96,11 +96,11 @@ TEST(SocketTests, ip)
             auto bytes_received = socket.receive(buffer, sizeof(buffer)-1);
             if (bytes_received > 0) {
                 buffer[bytes_received] = '\0'; // Null-terminate the received data
-                std::cout << "Received " << bytes_received << " bytes:\n" << buffer;
+                LOG_DEBUG("Received {} bytes: {}", bytes_received, buffer);
                 EXPECT_NE(std::string(buffer).find("HTTP/1.1 200 OK"), std::string::npos);
             }
         }
-     });
+    });
  }
 
 
@@ -108,9 +108,9 @@ TEST(SocketTests, ip)
 TEST(SocketTests, udp_echo)
 {
     using namespace acpp::network;
-    std::cout << "Socket tests" << std::endl;
+    LOG_DEBUG("Socket tests");
     std::thread server_th([](){
-        std::cout << "UDP socket tests th" << std::endl;
+        LOG_DEBUG("UDP socket tests th");
 
         sync::udp_socket socket;
         sync::udp_socket::address_type adr = ip4_sockaddress("127.0.0.1", 2000);
@@ -120,14 +120,14 @@ TEST(SocketTests, udp_echo)
         auto bytes_received = socket.recv_from(client_adr, buffer, sizeof(buffer)); 
 
         if (bytes_received > 0) {
-            std::cout << "Server received: " << std::string(buffer, bytes_received) << std::endl;
+            LOG_DEBUG("Server received: {}", std::string(buffer, bytes_received));
             sync::udp_socket client_socket;
             client_socket.send_to(client_adr, buffer, bytes_received);
         }
     });
 
     std::thread client_th([](){
-        std::cout << "UDP socket test client th" << std::endl;
+        LOG_DEBUG("UDP socket test client th");
         sync::udp_socket socket;
         sync::udp_socket::address_type adr = ip4_sockaddress("127.0.0.1", 2000);
 
@@ -138,7 +138,7 @@ TEST(SocketTests, udp_echo)
         auto bytes_received = socket.recv_from(adr2, buffer, sizeof(buffer));
         if (bytes_received > 0) {
             std::string msg(buffer, bytes_received);
-            std::cout << "Client received: " << msg << std::endl;
+            LOG_DEBUG("Client received: {}", msg);
             EXPECT_EQ(msg, "Hello, Echo Server!");
         }
     });

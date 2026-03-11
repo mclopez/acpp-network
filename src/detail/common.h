@@ -8,6 +8,7 @@
 
 
 #define LOG_DEBUG(...)    acpp::network::log_debug(std::format(__VA_ARGS__))
+//#define LOG_DEBUG(...)    {}
 #define LOG_ERROR(...)    acpp::network::log_error(std::format(__VA_ARGS__))
 
 
@@ -26,7 +27,7 @@ public:
     }
 
     size_t write(const char* buffer, size_t len) {        
-        std::cout << "buffered_writer::write(1) initial len: " << len << std::endl; 
+        LOG_DEBUG("buffered_writer::write(1) initial len: {}", len); 
         if  (!buffer_.empty() || !writer_->write_enabled()) {
             return add_to_buffer(buffer, len);
         }
@@ -34,22 +35,22 @@ public:
         auto n = writer_->so_write(buffer, len);
 
         auto remainging_len = len - n;
-        std::cout << "buffered_writer::write(2) n: " << remainging_len << " len: " << len << " n: " << n << std::endl; 
+        LOG_DEBUG("buffered_writer::write(2) n: {} len: {} n: {}", remainging_len, len, n); 
         if (remainging_len > 0) {
             buffer += n;
-            std::cout << "buffered_writer::write(3) remainging_len: " << remainging_len << " len: " << len << " n: " << n << std::endl; 
+            LOG_DEBUG("buffered_writer::write(3) remainging_len: {} len: {} n: {}", remainging_len, len, n); 
 
             n += add_to_buffer(buffer, remainging_len);
         }
-        std::cout << "buffered_writer::write(1) total writen: " << n << std::endl; 
+        LOG_DEBUG("buffered_writer::write(1) total writen: {}", n); 
         return n;
     }
 
     size_t add_to_buffer(const char* buffer, size_t len) {
-        std::cout << "buffered_writer::add_to_buffer len: " << len << std::endl; 
+        LOG_DEBUG("buffered_writer::add_to_buffer len: {}", len); 
         size_t free_n = buffer_.capacity() - buffer_.size();
         auto to_buffer = std::min(len, free_n);
-        std::cout << "buffered_writer::add_to_buffer len: " << len << " free_n: " << free_n << " to_buffer: " << to_buffer << std::endl; 
+        LOG_DEBUG("buffered_writer::add_to_buffer len: {} free_n: {} to_buffer: {}", len, free_n, to_buffer); 
         if (to_buffer > 0)  {
             buffer_.insert(buffer_.end(), buffer, buffer + to_buffer);
         }

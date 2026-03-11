@@ -102,17 +102,17 @@ size_t datagram_socket<Address, Protocol>::recv_from(address_type& addr, char* d
     }
     if (res > 0) {
         std::string family = (addr1.sa_family == AF_INET) ? "AF_INET" : (addr1.sa_family == AF_INET6) ? "AF_INET6" : "Other";
-        std::cout << "recv_from " <<  std::string(data, res) << " family: " << family <<  " len1: " << len1 << std::endl;
+        LOG_DEBUG("recv_from {}  family: {}  len1: {}", std::string(data, res), family, len1);
     } else {
-        std::cout << "recv_from 0 bytes" << std::endl;
+        LOG_DEBUG("recv_from 0 bytes");;
     }    
     try {
         from_sockaddr(addr1, addr);
     } catch (const std::exception& ex) {
-        std::cerr << "recv_from exception: " << ex.what() << std::endl;
+        LOG_DEBUG("recv_from exception: {}", ex.what());
         return 0;
     }
-    std::cout << "recv_from 2"  << std::endl;
+    LOG_DEBUG("recv_from 2");
     return res;
 }
 
@@ -129,11 +129,6 @@ int datagram_socket<Address, Protocol>::bind(const address_type& ad) {
 }
 
 
-
-
-
-
-
 template<typename Socket, typename Address>
 void resolve_host(const std::string& host, const std::string& service, resolve_address_callback<Address>&& callback) {
 //    int                      sfd, s;
@@ -145,15 +140,17 @@ void resolve_host(const std::string& host, const std::string& service, resolve_a
     typename Socket::address_type addr;
 
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = get_family(addr); //AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-    hints.ai_socktype = Socket::socket_type; //SOCK_DGRAM; //TODO: make it configurable
+//    hints.ai_family = get_family(addr); //AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+    hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
+//   hints.ai_socktype = Socket::socket_type; //SOCK_DGRAM; //TODO: make it configurable
+    hints.ai_socktype = SOCK_DGRAM; //TODO: make it configurable
     hints.ai_flags = 0;
     hints.ai_protocol = 0;          /* Any protocol */
-
+    LOG_DEBUG("resolve_host HOST: {} SERVICE: {}", host, service);
     auto s = getaddrinfo(host.c_str(), service.c_str(), &hints, &result);
     ptrResult.reset(result);// Ensure resources are freed
     if (s != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+        fprintf(stderr, "*** getaddrinfo: %s\n", gai_strerror(s));
         exit(EXIT_FAILURE);
     }
 

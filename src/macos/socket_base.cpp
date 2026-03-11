@@ -11,6 +11,7 @@
 #include <sstream>
 #include <unordered_map>
 
+//#include <acpp-network/log.h>
 
 #include <acpp-network/socket_base.h>
 #include <detail/common.h>
@@ -125,14 +126,6 @@ public:
         fd_(::socket(domain, type, protocol)),
         io_(&io), callbacks_(std::move(callbacks)) 
     {
-        // //TODO: remove this line TEST ONLY!!!!
-
-        std::cout << "Initial SO_SNDBUF fd: " << fd_ << " size: " << get_send_buffer_size() << std::endl;
-        set_send_buffer_size(514);
-        std::cout << "After SO_SNDBUF fd: " << fd_ << " size: " << get_send_buffer_size() << std::endl;
-
-
-
         if (valid()) {
             int flags = fcntl(fd_, F_GETFL, 0);
             fcntl(fd_, F_SETFL, flags | O_NONBLOCK);
@@ -156,7 +149,7 @@ public:
     }
 
     void ask_read_event() {
-        std::cout << "socket_base_pimpl::ask_read_event fd: " << fd_ <<std::endl;
+        LOG_DEBUG("socket_base_pimpl::ask_read_event fd: {}", fd_);
         struct kevent ev_set = {0};
         EV_SET(&ev_set, fd_, EVFILT_READ, EV_ADD|EV_ENABLE|EV_CLEAR, 0, 0, (void*)this);
         auto r = kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);  
@@ -167,7 +160,7 @@ public:
     }
 
     void ask_write_event() {
-        std::cout << "socket_base_pimpl::ask_write_event fd: " << fd_ <<std::endl;
+        LOG_DEBUG("socket_base_pimpl::ask_write_event fd: {}", fd_);
         struct kevent ev_set = {0};
         EV_SET(&ev_set, fd_, EVFILT_WRITE, EV_ADD|EV_ONESHOT, 0, 0, (void*)this);
         auto r = kevent(io_->fd(), &ev_set, 1, NULL, 0, NULL);        
@@ -178,6 +171,10 @@ public:
     }
 
     bool bind(const sockaddr& addr) {
+        int yes = 1;
+        setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+        setsockopt(fd_, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof(yes));
+
         return ::bind(fd_, &addr, sizeof(sockaddr)) == 0;
     }
 
@@ -188,7 +185,7 @@ public:
             log_error_func("listen");
         }else {
             listening_ = true;
-            std::cout << "Socket listening on fd " << fd_ << std::endl;
+            LOG_DEBUG("Socket listening on fd: {}", fd_);
         }
         return res;
     }
@@ -223,15 +220,13 @@ size_t so_write(const char* buffer, size_t len) {
 }
 
 size_t so_write_internal(const char* buffer, size_t len) {
-    //std::cout << "so_write_internal(0) fd_: " << fd_ << " to send len: " <<  len << std::endl;
     auto n = ::send(fd_, buffer, len, 0);
-    log_debug(std::string("so_write_internal(1) fd_: ") + std::to_string(fd_) +  " n: " + std::to_string(n) + " len: " + std::to_string(len) );
+    LOG_DEBUG("so_write_internal(1) fd_: {} n: {} len: {}", fd_, n, len);
     if ( n > 0) {         
-        //std::cout << "so_write_internal(2) fd_: " << fd_ << " len: " << len << std::endl;
         return n;
     } else if (n == -1) {
         if(errno == EAGAIN || errno == EWOULDBLOCK) {
-            log_debug(std::string("so_write_internal(3) fd_: ") + std::to_string(fd_) +  " ask EPOLLOUT:  len: " + std::to_string(len));
+            LOG_DEBUG("so_write_internal(3) fd_: {}  ask EPOLLOUT:  len: {}", fd_, len);
             //write_enabled_ = false;
             //set_events(EPOLLIN | EPOLLOUT, "so_write_internal");
             ask_write_event();
@@ -264,7 +259,7 @@ size_t so_write_internal(const char* buffer, size_t len) {
 
 
 async_socket_base::async_socket_base(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks) {
-    std::cout << "async_socket_base constructor without fd " << (void*) this << std::endl;
+    LOG_DEBUG("async_socket_base constructor without fd {}", (void*) this);
     pimpl_ =  std::make_unique<socket_base_pimpl>(domain, type, protocol, io, std::move(callbacks));
     pimpl_->parent_ = this;
     io.add_socket(*this);
@@ -417,7 +412,7 @@ struct io_context_pimpl {
             for (int i = 0; i < nev; i++) {
                 auto data = (socket_base_pimpl *)events[i].udata;
                 if (events[i].filter == EVFILT_READ) {
-                    std::cout << "io_context::wait_for_input EVFILT_READ" << std::endl;
+                    LOG_DEBUG("io_context::wait_for_input EVFILT_READ");
                     if (data->listening_) {
                         // New connection on listening socket
                         auto new_fd = ::accept(data->fd_, NULL, NULL);
@@ -427,7 +422,7 @@ struct io_context_pimpl {
                                 data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "accept");
                             }
                         } else {
-                            std::cout << "New connection accepted, fd: " << new_fd << std::endl;
+                            LOG_DEBUG("New connection accepted, fd: {}", new_fd);
                             if (data->callbacks_.on_accepted) {
                                 async_socket_base new_socket(data->domain_, data->type_, data->protocol_, new_fd, *data->io_, socket_callbacks{});
                                 new_socket.pimpl_->ask_read_event();
@@ -437,12 +432,12 @@ struct io_context_pimpl {
                         }
                     } else if (data->callbacks_.on_received || data->callbacks_.on_disconnected) {  
                         char buffer[4 * 1024]; //TODO: make this dynamic or configurable
-                        std::cout << "io_context::wait_for_input EVFILT_READ data: " << events[i].data << std::endl;
+                        LOG_DEBUG("io_context::wait_for_input EVFILT_READ data: {}", events[i].data);
                         ssize_t n;
                         while(true) {
                             n = ::recv(data->fd_, buffer, sizeof(buffer), 0); 
                             if (n > 0) {        
-                                std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;
+                                LOG_DEBUG("io_context::wait_for_input EVFILT_READ n: {}", n);
                                 if (data->callbacks_.on_received){
                                     data->callbacks_.on_received(*(data->parent_), buffer, n); 
                                 }
@@ -472,7 +467,7 @@ struct io_context_pimpl {
 
                     }
                 } else if (events[i].filter == EVFILT_WRITE) {
-                    std::cout << "io_context::wait_for_input EVFILT_WRITE connected: " << data->connected_ << std::endl;
+                    LOG_DEBUG("io_context::wait_for_input EVFILT_WRITE connected: {}", data->connected_);
                     if (!data->connected_) {
                         data->connected_ = true;
 
@@ -481,14 +476,14 @@ struct io_context_pimpl {
                         getsockopt(data->fd_, SOL_SOCKET, SO_ERROR, &err, &len);
 
                         if (err == 0) {
-                            std::cout << "✅ Connected!\n";
+                            LOG_DEBUG("✅ Connected!");
                             if (data->callbacks_.on_connected) {
-                                std::cout << "on_connected called\n";
+                                LOG_DEBUG("on_connected called");
                                 data->callbacks_.on_connected(*(data->parent_));
                             }
                             data->ask_read_event();
                         } else {
-                            std::cerr << "❌ Connect failed: " << strerror(err) << "\n";
+                            LOG_ERROR("❌ Connect failed: {}", strerror(err));
                             if (data->callbacks_.on_error) {
                                 data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "getsockopt");
                             }
@@ -510,7 +505,7 @@ struct io_context_pimpl {
                         tasks.pop();
                     }
                 } else if (events[i].filter == EVFILT_TIMER) {
-                    std::cout << "io_context::wait_for_input EVFILT_TIMER" << std::endl;
+                    LOG_DEBUG("io_context::wait_for_input EVFILT_TIMER");
                     timer_impl* timer = (timer_impl*)events[i].ident;
                     if (timer) {
                         if (timer->cb_) {

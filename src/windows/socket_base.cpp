@@ -298,7 +298,7 @@ public:
                 }
             }        
         } else {
-            std::cout << "accept lpAcceptEx faild: " << std::endl;
+            LOG_DEBUG("accept lpAcceptEx faild: ");
 
         }
         return 0;
@@ -386,6 +386,7 @@ public:
 
     size_t write(const char* buffer, size_t len) {
         if (write_op.in_use) {
+            LOG_DEBUG("async_socket_base write: async_socket_base = true");
             return 0;
         }
         auto n = internal_write(buffer, len);
@@ -410,7 +411,7 @@ private:
 
 async_socket_base::async_socket_base(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks)
 {
-    std::cout << "async_socket_base constructor without fd " << (void*) this << std::endl;
+    LOG_DEBUG("async_socket_base constructor without fd {}", (void*) this);
     pimpl_ =  std::make_unique<socket_base_pimpl>(domain, type, protocol, io, std::move(callbacks));
     pimpl_->parent_ = this;
     io.add_socket(*this);
@@ -418,7 +419,7 @@ async_socket_base::async_socket_base(int domain, int type, int protocol, io_cont
 
 async_socket_base::async_socket_base(int domain, int type, int protocol, fd_type fd, io_context& io, socket_callbacks&& callbacks)
 {
-    std::cout << "async_socket_base constructor without fd " << (void*) this << std::endl;
+    LOG_DEBUG("async_socket_base constructor without fd {}", (void*) this);
     pimpl_ =  std::make_unique<socket_base_pimpl>(domain, type, protocol, fd, io, std::move(callbacks));
     pimpl_->parent_ = this;
     io.add_socket(*this);
@@ -646,7 +647,7 @@ void io_context::wait_for_input() {
     pimpl_->run = true;
     while (pimpl_->run) {
         // Blocks until an I/O operation completes and is placed on the queue
-        log_debug("wait_for_input GetQueuedCompletionStatus");
+        LOG_DEBUG("wait_for_input GetQueuedCompletionStatus");
         BOOL success = GetQueuedCompletionStatus(
             pimpl_->hIOCP_,
             &bytesTransferred,
@@ -661,7 +662,7 @@ void io_context::wait_for_input() {
 
             // Case 1: timeout (if you used a non-infinite timeout)
             if (lpOverlapped == nullptr && err == WAIT_TIMEOUT) {
-                log_debug(std::format("continue(3)"));
+                LOG_DEBUG("continue(3)");
                 continue;
             }
 
@@ -689,25 +690,25 @@ void io_context::wait_for_input() {
                         }
                     }
                 }
-                log_debug(std::format("continue(2)"));
+                LOG_DEBUG("continue(2)");
                 continue;
             }
         }
 
-        log_debug(std::format("process .... success: {}", success));
+        LOG_DEBUG("process .... success: {}", success);
 
         // The completionKey is our CLIENT_CONTEXT*
         socket_base_pimpl* socket = (socket_base_pimpl*)completionKey;
         if (!socket) {
             if (lpOverlapped) {
                 async_operation* op = CONTAINING_RECORD(lpOverlapped, async_operation, olOverlap);
-                log_debug(std::format("process .... 4 op->type: {}", (int)op->type));
+                LOG_DEBUG("process .... 4 op->type: {}", (int)op->type);
                 if (op->type == operation_type::exec)    {
                     auto exec_op = std::unique_ptr<execution_operation>((execution_operation*)op);
                     exec_op->fun();
                 }
             }
-            log_debug(std::format("process .... success: {} continue(1)", success));
+            LOG_DEBUG("process .... success: {} continue(1)", success);
             continue; 
         }
 
@@ -718,7 +719,7 @@ void io_context::wait_for_input() {
 
         // --- Process the Completed I/O Operation ---
         if (operation->type == operation_type::accept) {
-            log_debug(std::format("ACCEPT  .... bytesTransferred: {}", bytesTransferred));
+            LOG_DEBUG("ACCEPT  .... bytesTransferred: {}", bytesTransferred);
             accept_operation& op = (accept_operation&)*operation;
             op.new_socket->pimpl_->start_read();
             std::string msg(op.buffer, bytesTransferred);
@@ -726,13 +727,13 @@ void io_context::wait_for_input() {
                 socket->callbacks_.on_accepted(*socket->parent_, std::move(*op.new_socket));
             }
         } else if (operation->type == operation_type::connect) {
-            log_debug(std::format("CONNECT  .... bytesTransferred: {}", bytesTransferred));
+            LOG_DEBUG("CONNECT  .... bytesTransferred: {}", bytesTransferred);
             socket->start_read();
             if(socket->callbacks_.on_connected) {
                 socket->callbacks_.on_connected(*socket->parent_);
             }
          }else if (operation->type == operation_type::read) {
-            log_debug(std::format("READ  .... bytesTransferred: {}", bytesTransferred));
+            LOG_DEBUG("READ  .... bytesTransferred: {}", bytesTransferred);
             read_operation& op = *(read_operation*)operation;
             if (bytesTransferred == 0) {
                 if (socket->callbacks_.on_disconnected) 
@@ -744,7 +745,7 @@ void io_context::wait_for_input() {
                 socket->start_read();
             }
         } else if (operation->type == operation_type::write) {
-            log_debug(std::format("WRITE  .... bytesTransferred: {}", bytesTransferred));
+            LOG_DEBUG("WRITE  .... bytesTransferred: {}", bytesTransferred);
             write_operation& op = *(write_operation*)operation;
             op.in_use = false;
             //socket->send_pending();
@@ -753,7 +754,7 @@ void io_context::wait_for_input() {
                 socket->callbacks_.on_sent(*socket->parent_, 0);
             }
         } else {
-            log_debug("Unknown operation");
+            LOG_DEBUG("Unknown operation");
         }
     }
     return;
@@ -770,7 +771,7 @@ void io_context::add_socket(async_socket_base& as) {
         (ULONG_PTR)as.pimpl_.get(),                    // CompletionKey (not used yet)
         0                     // NumberOfConcurrentThreads (0 uses system default)    
     );
-    log_debug(std::format("add_socket to coml port")); 
+    LOG_DEBUG("add_socket to coml port"); 
 }
 
 void io_context::stop() {
@@ -789,7 +790,7 @@ public:
 
 
 socket_init::socket_init(){
-    std::cout << "socket_init" << std::endl;
+    LOG_DEBUG("socket_init");
     WSADATA wsaData;
     // We request Winsock version 2.2 (the standard modern version)
     WORD wVersionRequested = MAKEWORD(2, 2); 
@@ -808,7 +809,7 @@ socket_init::socket_init(){
 }
 
 socket_init::~socket_init(){
-    log_debug("~socket_init");
+    LOG_DEBUG("~socket_init");
     //TODO: always even when WSAStartup fails??
     WSACleanup();
 }
@@ -819,7 +820,7 @@ socket_init init;
 void CALLBACK on_timer(PVOID lpParam, BOOLEAN TimerOrWaitFired)
 {
     auto timer = (timer_impl*) lpParam;
-    std::cout << "Timer fired on thread " << GetCurrentThreadId() << "\n";
+    LOG_DEBUG("Timer fired on thread {}", GetCurrentThreadId());
 
     timer->io_->exec([timer](){
         if (timer->cb_)  

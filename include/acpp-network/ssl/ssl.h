@@ -145,11 +145,14 @@ public:
 
     enum {it = Next::it+1,};  
     using next_type = Next;
-    using chain_type = async::AppendToTuple_t<typename next_type::chain_type, stream* >;
+    using chain_type = async::append_to_tuple_t<typename next_type::chain_type, stream* >;
     using last_type = next_type::last_type;
     enum class status  { closed, connecting, connected, peer_closing, closing};
 
     stream(side_t side);
+    //stream(acpp::network::async::io_context& io, side_t side);
+    stream(async::stream_context& c);
+
     virtual ~stream();
 
     template<typename Chain>

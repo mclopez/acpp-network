@@ -228,6 +228,7 @@ async_socket_base::async_socket_base(async_socket_base&& other) noexcept {
 }
 
 async_socket_base::~async_socket_base() {
+    LOG_DEBUG("~async_socket_base()");
     close(); 
 }
 
@@ -445,7 +446,7 @@ int socket_base_pimpl::listen(int backlog) {
         log_error_func("listen");
     }else {
         listening_ = true;
-        log_debug("Socket listening on fd " + std::to_string(fd_));
+        LOG_DEBUG("Socket listening on fd {}", fd_);
     }
     return res;
 }
@@ -478,15 +479,13 @@ size_t socket_base_pimpl::so_write(const char* buffer, size_t len) {
 }
 
 size_t socket_base_pimpl::so_write_internal(const char* buffer, size_t len) {
-    //std::cout << "so_write_internal(0) fd_: " << fd_ << " to send len: " <<  len << std::endl;
     auto n = ::send(fd_, buffer, len, 0);
-    log_debug(std::string("so_write_internal(1) fd_: ") + std::to_string(fd_) +  " n: " + std::to_string(n) + " len: " + std::to_string(len) );
+    LOG_DEBUG("so_write_internal(1) fd_: {} n: {} len: {}", fd_, n, len);
     if ( n > 0) {         
-        //std::cout << "so_write_internal(2) fd_: " << fd_ << " len: " << len << std::endl;
         return n;
     } else if (n == -1) {
         if(errno == EAGAIN || errno == EWOULDBLOCK) {
-            log_debug(std::string("so_write_internal(3) fd_: ") + std::to_string(fd_) +  " ask EPOLLOUT:  len: " + std::to_string(len));
+            LOG_DEBUG("so_write_internal(3) fd_: {} ask EPOLLOUT:  len: {}", fd_, len);
             write_enabled_ = false;
             set_events(EPOLLIN | EPOLLOUT, "so_write_internal");
             return 0; // nothing send, kernel buffer full
@@ -508,44 +507,42 @@ size_t socket_base_pimpl::so_write_internal(const char* buffer, size_t len) {
 
 void socket_base_pimpl::handle_event(uint32_t events)  {   
     if (events & EPOLLOUT) {
-        log_debug("io_context::wait_for_input EPOLLOUT 0");
+        LOG_DEBUG("io_context::wait_for_input EPOLLOUT 0");
         //disable EPOLLOUT before calling callbacks
         set_events(EPOLLIN, "handle_event(1)");
-        log_debug("io_context::wait_for_input EPOLLOUT set_events");
+        LOG_DEBUG("io_context::wait_for_input EPOLLOUT set_events");
 
         write_enabled_ = true;
         if (!connected_) {
-            log_debug("io_context::wait_for_input EPOLLOUT 1");
+            LOG_DEBUG("io_context::wait_for_input EPOLLOUT 1");
             connected_ = true;
 
             int err = 0;
             socklen_t len = sizeof(err);
             getsockopt(fd_, SOL_SOCKET, SO_ERROR, &err, &len);
-            log_debug("io_context::wait_for_input EPOLLOUT 2");
+            LOG_DEBUG("io_context::wait_for_input EPOLLOUT 2");
 
             if (err == 0) {
-                log_debug("Connected");
+                LOG_DEBUG("Connected");
                 if (callbacks_.on_connected) {
-                    //std::cout << "on_connected called\n";
                     callbacks_.on_connected(*(parent_));
                 }
-                log_debug("Connected done");
+                LOG_DEBUG("Connected done");
             } else {
-                log_debug(std::string("Connect failed: ") + strerror(err)) ;
+                LOG_DEBUG("Connect failed: {}", strerror(err));
                 if (callbacks_.on_error) {
                     callbacks_.on_error(*(parent_), errno, strerror(errno), "getsockopt");
                 }
             }
         } else {
             //write_buffer_.write_buffered();
-            //std::cout << "io_context::wait_for_input EPOLLOUT write_buffer_.write_buffered() called callbacks_.on_sent: " << (callbacks_.on_sent ? "true": "false") << std::endl;
             if (callbacks_.on_sent) {
                 callbacks_.on_sent(*(parent_), 0);
             }
         }
     }  
     if (events & EPOLLIN) {
-        log_debug("io_context::wait_for_input EPOLLIN");
+        LOG_DEBUG("io_context::wait_for_input EPOLLIN");
         if (listening_) {
             // New connection on listening socket
             auto new_fd = ::accept(fd_, NULL, NULL);
@@ -555,7 +552,7 @@ void socket_base_pimpl::handle_event(uint32_t events)  {
                     callbacks_.on_error(*parent_, errno, strerror(errno), "accept");
                 }
             } else {
-                std::cout << "New connection accepted, fd: " << new_fd << std::endl;
+                LOG_DEBUG("New connection accepted, fd: {}", new_fd);
                 if (callbacks_.on_accepted) {
                     async_socket_base new_socket(domain_, type_, protocol_, new_fd, *io_, socket_callbacks{});
                     new_socket.pimpl_->set_events(EPOLLIN, "handle_event(2)");
@@ -566,7 +563,6 @@ void socket_base_pimpl::handle_event(uint32_t events)  {
         } else if (callbacks_.on_received || callbacks_.on_disconnected) {  
             char buffer[1024 * 4]; //TODO: make this dynamic or configurable
             auto n = ::recv(fd_, buffer, sizeof(buffer), 0); 
-            //std::cout << "io_context::wait_for_input EVFILT_READ n: " << n << std::endl;
             if (n == 0) {
                 callbacks_.on_disconnected(*(parent_)); 
             } else if (n > 0) {
@@ -582,8 +578,7 @@ void socket_base_pimpl::handle_event(uint32_t events)  {
 }
 
 void socket_base_pimpl::set_events(uint32_t events, const std::string& hint) {
-    //std::cout << "io_context_pimpl::set_events fd: " << fd_ << " events: " << events <<std::endl;
-    log_debug("io_context_pimpl::set_events fd: " + std::to_string(fd_) + " events: " + std::to_string(events) + " " + hint) ;
+    LOG_DEBUG("io_context_pimpl::set_events fd: {}, events: {}, hint: {}", fd_, events, hint);
     struct epoll_event sd;
     sd.events = events;
     sd.data.ptr = (event_handler*)this;

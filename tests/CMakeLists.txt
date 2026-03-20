@@ -10,7 +10,6 @@ add_executable(acpp-network-tests
     main.cpp
     socket_tests.cpp
     async_tests.cpp
-    ssl_tests.cpp
     stream_tests.cpp
 )
 

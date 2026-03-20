@@ -5,12 +5,18 @@
 
 #include <gtest/gtest.h> // googletest header file  
 
-//#include <acpp-network/log.h>
+#include <acpp-network/socket.h>
+#include <acpp-network/socket.inl>
+
+#include <acpp-network/address.h>
 #include <acpp-network/stream.h>
 #include <acpp-network/ssl/ssl.h>
 #include <acpp-network/ssl/ssl.inl>
 
 #include <detail/common.h>
+
+
+int port = 8080;
 
 TEST(StreamTests, stream_test1)
 {
@@ -230,31 +236,152 @@ TEST(StreamTests, ssl_stream_test2)
     client_server_test<stream_t>();
 }
 
-
-// ./build.sh && ./build/tests/acpp-network-tests --gtest_filter=StreamTests.ssl_stream_test2
-TEST(StreamTests, ssl_stream_test3)
-{
-
+template <typename Stream>
+void client_server_socket_stream_test() {
     using namespace acpp::network::async;
     using namespace acpp::network;
-    using stream_t = stream<::acpp::network::ssl::stream<fake_endpoint>>;
+    using stream_t = Stream;
     
-    stream_t client(acpp::network::side_t::client);
-    stream_t server(acpp::network::side_t::server);
+    io_context io; //
+    ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port++);
+    ::acpp::network::async::stream_context c(io, acpp::network::side_t::client, "");
 
-    // client.last().other_connected = [&](){
-    //     server.on_connected();
-    // };
+    stream_t client(c);
+    //stream_t server(io, acpp::network::side_t::server);
 
-    client.connect();
-    std::string msg2("world");
-    
-    auto last = client.last();
 
-    //last.on_received(msg2.data(), msg2.size());
-    //last.on_connected();
+    std::vector<std::unique_ptr<stream_t>> server_sessons;
+    //stream_t session(io, acpp::network::side_t::server);
 
-    //last.on_received<stream_t::chain_type>(msg2.data(), msg2.size());
-    //l.on_received(msg2.data(), msg2.size());
+    size_t total = 0, total_sent = 0;
+    async::async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
+        async::socket_callbacks {
+            .on_accepted = [&](async::async_socket_base& server, async::async_socket_base&& accepted_socket) {
+                ::acpp::network::async::stream_context c(io, acpp::network::side_t::server, "");
+                server_sessons.emplace_back(std::make_unique<stream_t>(c));
+                auto& sess = *server_sessons.back();
+                
+                //auto& sess = session;
+                
+                LOG_DEBUG("sess: {}", (void*)&sess);
+                sess.last().socket(std::move(accepted_socket));
+
+                sess.on_received_cb_ = [&](const char* buf, size_t len) {
+                    //echo... 
+                    sess.write(buf, len);
+                };
+
+                LOG_DEBUG("SERVER ACCEPTED");
+            }
+        }
+    );
+
+    std::string msg("hello");
+
+    client.on_connected_cb_ = [&]() {
+        LOG_DEBUG("client.on_connected_cb_ sending msg: '{}'", msg);
+        client.write(msg.c_str(), msg.size());
+    };
+    std::string msg2;
+    client.on_received_cb_ = [&](const char* buf, size_t size) {
+        msg2 = std::string(buf, size);
+        LOG_DEBUG("client.on_received_cb_ sending msg2: '{}'", msg2);
+        io.stop();
+    };
+
+    server_socket.bind(to_sockaddr(adr));
+    server_socket.listen(5);
+
+    client.last().connect(adr);
+
+    //client.disconnect();
+
+    io.wait_for_input();
+    EXPECT_EQ(msg, msg2);
+    LOG_DEBUG("test end");
+}
+
+
+// ./build.sh && ./build/tests/acpp-network-tests --gtest_filter=StreamTests.socket_stream_test1
+// build.bat && build\tests\RelWithDebInfo\acpp-network-tests.exe  --gtest_filter=StreamTests.socket_stream_test1
+TEST(StreamTests, socket_stream_test1)
+{
+    //using ssl_stream_t   = ::acpp::network::ssl::stream;
+    using socket_stream_t = ::acpp::network::async::socket_stream;
+    using stream_t = ::acpp::network::async::stream<socket_stream_t>;
+
+    client_server_socket_stream_test<stream_t>();
+}
+
+// ./build.sh && ./build/tests/acpp-network-tests --gtest_filter=StreamTests.socket_stream_test2
+// build.bat && build\tests\RelWithDebInfo\acpp-network-tests.exe  --gtest_filter=StreamTests.socket_stream_test2
+TEST(StreamTests, socket_stream_test2)
+{
+    //using ssl_stream_t   = ::acpp::network::ssl::stream;
+    using socket_stream_t = ::acpp::network::async::socket_stream;
+    using ssl_stream_t = ::acpp::network::ssl::stream<socket_stream_t>;
+    using stream_t = ::acpp::network::async::stream<ssl_stream_t>;
+
+    client_server_socket_stream_test<stream_t>();
+}
+
+
+
+ TEST(StreamTests, socket_stream_example_org_text)
+ {
+    using namespace acpp::network;
+    //using tcp_socket = sync::stream_socket<ip_socketaddress>;
+
+    async::io_context io; //
+
+    using socket_stream_t = ::acpp::network::async::socket_stream;
+    using ssl_stream_t = ::acpp::network::ssl::stream<socket_stream_t>;
+    using stream_t = ::acpp::network::async::stream<ssl_stream_t>;
+//    using stream_t = ::acpp::network::async::stream<socket_stream_t>;
+    using socket_t = stream_t::last_type;
+    std::string hostname = "badssl.com";
+
+    sync::resolve_host<socket_t, socket_t::address_type>(
+        hostname, //"www.elpais.com", 
+        /*"80"*/ 
+        "443", [&](const ip_socketaddress& addr, bool& success){
+
+        LOG_DEBUG("Resolved: {}", to_string(addr));
+        
+        ::acpp::network::async::stream_context c(io, acpp::network::side_t::client, hostname);
+        stream_t client(c);
+
+        client.on_connected_cb_ = [&]() {
+
+            std::string msg = std::format(
+                "GET / HTTP/1.1\r\n" 
+                "Host: {}\r\n" 
+                "User-Agent: Mozilla/5.0\r\n" 
+                "Accept: */*\r\n" 
+                "Connection: close\r\n\r\n", hostname);
+
+            LOG_DEBUG("client.on_connected_cb_ sending msg: '{}'", msg);
+            client.write(msg.c_str(), msg.size());
+        };
+
+        std::string msg2;
+        std::string received;
+        client.on_received_cb_ = [&](const char* buf, size_t size) {
+            received += std::string(buf, size);
+            LOG_DEBUG("client.on_received_cb_ sending received: '{}'", received);
+
+            if (!received.empty()) {
+                EXPECT_NE(received.find("HTTP/1.1 200 OK"), std::string::npos);
+            }
+
+            io.stop();
+        };
+
+        client.last().connect(addr);
+        io.wait_for_input();
+
+        if (success) {
+        }
+    });
 
 }

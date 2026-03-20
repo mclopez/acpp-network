@@ -21,12 +21,41 @@ stream<Next>::stream(side_t side)
     LOG_DEBUG("ssl::stream<Next>::stream side: {} status: {}", (int)side_, (int)status_); 
     next_.prev_ = this;
 
-    auto c = x509::create_self_signed_cert(x509::Name().cn("xxx").l("l").o("o").st("st"));
-    LOG_DEBUG("ssl::stream<Next>::stream: cert: {}", c.first.to_string());
-    ctx_.set_cert(c.first);
-    ctx_.set_pkey(c.second);
-    //ssl_ = std::make_unique<ssl::Stream>(context_);
+    if (side == side_t::server) {
+        auto c = x509::create_self_signed_cert(x509::Name().cn("xxx").l("l").o("o").st("st"));
+        LOG_DEBUG("ssl::stream<Next>::stream: cert: {}", c.first.to_string());
+        ctx_.set_cert(c.first);
+        ctx_.set_pkey(c.second);
+        //ssl_ = std::make_unique<ssl::Stream>(context_);
 
+    }
+
+
+
+    ssl_ = SSL_new(ctx_.handle());
+    BIO_new_bio_pair(&int_bio, /*0*/ 1024 * 50, &ext_bio, /*0*/ 1024 * 50);
+    SSL_set_bio(ssl_, int_bio, int_bio);
+    int size = 0;
+    BIO_get_write_buf_size(ext_bio, size);
+    LOG_DEBUG("BIO_get_write_buf_size(ext_bio) {}", size); 
+
+}
+
+ 
+template<typename Next>
+stream<Next>::stream(async::stream_context& c)
+:side_(c.side()), next_(c), ctx_(c.side()), status_(status::closed)
+{
+    LOG_DEBUG("ssl::stream<Next>::stream side: {} status: {}", (int)side_, (int)status_); 
+    next_.prev_ = this;
+
+    if (side_ == side_t::server) {
+        auto c = x509::create_self_signed_cert(x509::Name().cn("xxx").l("l").o("o").st("st"));
+        LOG_DEBUG("ssl::stream<Next>::stream: cert: {}", c.first.to_string());
+        ctx_.set_cert(c.first);
+        ctx_.set_pkey(c.second);
+        //ssl_ = std::make_unique<ssl::Stream>(context_);
+    }
 
 
     ssl_ = SSL_new(ctx_.handle());
@@ -37,6 +66,13 @@ stream<Next>::stream(side_t side)
     LOG_DEBUG("BIO_get_write_buf_size(ext_bio) {}", size); 
 
 }
+
+
+// template<typename Next>
+// stream<Next>::stream(acpp::network::async::io_context& io, side_t side)
+// :stream(side)
+// {}
+
 
 template<typename Next>
 stream<Next>::~stream() {
@@ -86,7 +122,6 @@ void stream<Next>::connect() {
 template<typename Next>
 template <typename Chain>
 void stream<Next>::on_connected() { 
-    //std::cout <<"ssl::stream::onConnected status_: " << (int)status_ << " ctx_.type(): " << (int)ctx_.type() << std::endl; 
     LOG_DEBUG("ssl::stream::on_connected status:{} ctx_.type():{}", (int)status_, (int)ctx_.side());
     if (side_ == side_t::client) {
         do_connect<Chain>(nullptr, 0);
@@ -119,9 +154,6 @@ void stream<Next>::do_connect(const char* buf, size_t len) {
         }
         status_  = status::connecting;
     } else {
-        //std::stringstream ss; 
-        //ss << "connecting in invalid state status_:" << (int)status_;
-        //std::cout << ss.str() << std::endl;
         LOG_ERROR("connecting in invalid state status_: {}", (int)status_);
         throw exception(std::format("connecting in invalid state status_: {}", (int)status_));  
     }
@@ -167,7 +199,6 @@ void stream<Next>::do_connect(const char* buf, size_t len) {
 template<typename Next>
 template <typename Chain>
 void stream<Next>::on_disconnected() { 
-    //std::cout <<"ssl::stream::onConnected status_: " << (int)status_ << " ctx_.type(): " << (int)ctx_.type() << std::endl; 
     LOG_DEBUG("ssl::stream::on_disconnected status:{} ctx_.type():{}", (int)status_, (int)ctx_.side());
     //do_shutdown<Chain>(nullptr, 0);
 }
@@ -176,20 +207,20 @@ void stream<Next>::on_disconnected() {
 template<typename Next>
 template<typename Chain>
 void stream<Next>::do_shutdown(const char* buf, size_t len) {
-    std::cout <<"ssl::stream::do_shutdown status_: " << (int)status_ << std::endl; 
+    LOG_DEBUG("ssl::stream::do_shutdown status_: {}", (int)status_); 
     auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
 
     int e;
     if (len) {
         e = BIO_write(ext_bio, buf, len);
-        std::cout <<"ssl::stream::do_shutdown BIO_write e:" << e << " len: " << len << std::endl; 
+        LOG_DEBUG("ssl::stream::do_shutdown BIO_write e: {} len: {}", e, len); 
 
     }
     if (status_ == status::closing) {
-        std::cout << "ssl::stream::do_shutdown  going shutdown "<< '\n';
+        LOG_DEBUG("ssl::stream::do_shutdown  going shutdown");
         e = SSL_shutdown(ssl_);
         int ssls = SSL_get_shutdown(ssl_);
-        std::cout << "ssl::stream::do_shutdown ssls(1):"  << ssls << '\n';
+        LOG_DEBUG("ssl::stream::do_shutdown ssls(1): {}", ssls);
         //status_  = Status::closing;
     } else {
         throw exception(std::string("disconnecting in valid state status_:") // (int)status_
@@ -198,11 +229,11 @@ void stream<Next>::do_shutdown(const char* buf, size_t len) {
     // check error
     if (e < 0)  {
         if (SSL_get_error(ssl_, e) == SSL_ERROR_WANT_READ)  {
-//            std::cout << "ssl::stream::do_connect  SSL_ERROR_WANT_READ "<< '\n';
+//            LOG_DEBUG("ssl::stream::do_connect  SSL_ERROR_WANT_READ ");
         } else if (SSL_get_error(ssl_, e) == SSL_ERROR_WANT_WRITE)  {
-//            std::cout << "ssl::stream::do_connect  SSL_ERROR_WANT_WRITE "<< '\n';
+//            LOG_DEBUG("ssl::stream::do_connect  SSL_ERROR_WANT_WRITE ");
         } else  {
-//            std::cout << "ssl::stream::do_connect  ERROR.... "<< '\n';
+//            LOG_DEBUG("ssl::stream::do_connect  ERROR.... ");
         }
     } else if (e == 0){
         LOG_DEBUG("ssl::stream::do_shutdown  OK pending ");
@@ -261,32 +292,31 @@ void stream<Next>::on_received(const char* buf, size_t len)  {
     if (status_ == status::connected) 
     {
         //const char* hostname = SSL_get_servername(ssl_, TLSEXT_NAMETYPE_host_name);
-        //std::cout << "hostname: "  << hostname << '\n';
 
-        int n = BIO_write(ext_bio, buf, len);
-        LOG_DEBUG("ssl::stream::on_received BIO_write: n: {} len: {}", n, len);
-
+        int n = 0;
+        int tot_n =0;
         buffer b;
+        while (tot_n < len) {
+            n = BIO_write(ext_bio, buf + tot_n, len - tot_n); 
+            tot_n += n;
+            LOG_DEBUG("*ssl::stream::on_received BIO_write: n: {} len: {} tot_n: {}", n, len, tot_n);
 
-        int shutdown_st ;//= SSL_get_shutdown(ssl_);
-        //std::cout << "ssl::stream::on_received ssls(1):"  << shutdown_st << '\n';
-
-        while(n = ::SSL_read(ssl_, b.data(), b.size()), n > 0) {
-            LOG_DEBUG("ssl::stream::on_received SSL_read: {}", n);
-                prior->template on_received<Chain>(b.data(), n);
-        } 
-        if (n <= 0) {
-            //SSL_get_error(ssl_, e) == SSL_ERROR_WANT_WRITE);
-            LOG_DEBUG("ssl::stream::on_received SSL_read: {} error: ", n, SSL_get_error(ssl_, n));
+            while(n = ::SSL_read(ssl_, b.data(), b.size()), n > 0) {
+                LOG_DEBUG("ssl::stream::on_received SSL_read: {}", n);
+                    prior->template on_received<Chain>(b.data(), n);
+            } 
+            if (n <= 0) {
+                //SSL_get_error(ssl_, e) == SSL_ERROR_WANT_WRITE);
+                LOG_DEBUG("ssl::stream::on_received SSL_read: {} error: {}", n, SSL_get_error(ssl_, n));
+            }
+            //shutdown_st = SSL_get_shutdown(ssl_);
+            while (n = ::BIO_read(ext_bio, b.data(), b.size()), n > 0) {
+                LOG_DEBUG("ssl::stream::on_received BIO_read: {}", n);
+                    next_.template write<Chain>(b.data(), n);
+            }        
         }
-        //shutdown_st = SSL_get_shutdown(ssl_);
-        //std::cout << "ssl::stream::on_received ssls(1.1):"  << shutdown_st << '\n';
-        while (n = ::BIO_read(ext_bio, b.data(), b.size()), n > 0) {
-            LOG_DEBUG("ssl::stream::on_received BIO_read: {}", n);
-                next_.template write<Chain>(b.data(), n);
-        }
 
-        shutdown_st = SSL_get_shutdown(ssl_);
+        int shutdown_st = SSL_get_shutdown(ssl_);
         if (shutdown_st ==  SSL_RECEIVED_SHUTDOWN)    {
             status_ = status::peer_closing;
             shutdown_st = SSL_shutdown(ssl_);
@@ -301,7 +331,6 @@ void stream<Next>::on_received(const char* buf, size_t len)  {
 //SSL_SENT_SHUTDOWN
 //SSL_RECEIVED_SHUTDOWN
 
-        //std::cout << "ssl::stream::on_received ssls(2):"  << shutdown_st << '\n';
 
     }
 

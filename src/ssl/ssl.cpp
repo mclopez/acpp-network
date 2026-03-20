@@ -101,10 +101,10 @@ std::string x509::to_string() {
 
     X509_print(bio.get(), handle());
 
-    char *buffer;
+    const char *buffer;
     long n = BIO_get_mem_data(bio.get(), &buffer);
-    std::cout << buffer << std::endl;
-    return std::string();
+    LOG_DEBUG("cert: {}", buffer);
+    return std::string(buffer);
 
 }
 

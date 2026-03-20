@@ -15,10 +15,10 @@ TEST(AsyncSocketTests, simple_client_server)
 {
 
     using namespace acpp::network;
-    std::cout << "*** Socket tests" << std::endl;
+    LOG_DEBUG("*** Socket tests");
     int port = 6665;
     auto sync_server = [port](){
-        std::cout << "sync_server th" << std::endl;
+        LOG_DEBUG("sync_server th");
 
         sync::stream_socket<ip_socketaddress> server_socket;
 
@@ -30,30 +30,30 @@ TEST(AsyncSocketTests, simple_client_server)
          char buffer[1024];
          auto bytes_received = client_socket.receive(buffer, sizeof(buffer));
          if (bytes_received > 0) {
-             std::cout << "Server received: " << std::string(buffer, bytes_received) << std::endl;
+             LOG_DEBUG("Server received: {}", std::string(buffer, bytes_received));
              client_socket.send(buffer, bytes_received); // Echo back
          }
     };
 
     auto async_server = [port](){
-        std::cout << "async_server th" << std::endl;
+        LOG_DEBUG("async_server th");
 
         acpp::network::async::io_context io;
         std::vector<async::async_socket_base> sockets;
         //async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io);
 
-        std::cout << "async_server th 2" << std::endl;
+        LOG_DEBUG("async_server th 2");
 
         async::async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
             async::socket_callbacks {
                 .on_accepted = [&](async::async_socket_base& server, async::async_socket_base&& accepted_socket) {
-                    std::cout << "ACCEPTED" << std::endl;
+                    LOG_DEBUG("ACCEPTED");
                     accepted_socket.callbacks(async::socket_callbacks {
                         .on_connected = [](async::async_socket_base& s) {
-                            std::cout << "SERVER Async server socket connected" << std::endl;
+                            LOG_DEBUG("SERVER Async server socket connected");
                         },
                         .on_disconnected = [&](async::async_socket_base& s) {
-                            std::cout << "SERVER Async server socket disconnected" << std::endl;
+                            LOG_DEBUG("SERVER Async server socket disconnected");
                             io.stop();
                             std::erase_if(sockets, [&](auto& i){
                                 //return i.fd() == s.fd();
@@ -62,30 +62,30 @@ TEST(AsyncSocketTests, simple_client_server)
                         },
                         .on_received = [&](async::async_socket_base& s, const char* buf, size_t len){
                             std::string msg(buf, len);
-                            std::cout << "SERVER  Async server socket  received " << msg << "  from AsyncSocketTests.first" << std::endl;
+                            LOG_DEBUG("SERVER  Async server socket  received from AsyncSocketTests.first msg: {}", msg);
                             //io.stop();
                             //std::string msg2("hello back!");
                             s.write(msg.c_str(), msg.size());
                             //s.read();
                         },
                         .on_sent = [&](async::async_socket_base& s, size_t length) {
-                            std::cout << "SERVER Async server socket sent from AsyncSocketTests.first: length:" << length << std::endl;
+                            LOG_DEBUG("SERVER Async server socket sent from AsyncSocketTests.first: length: {}", length);
                         }
                     });
                     sockets.push_back(std::move(accepted_socket));
-                    std::cout << "SERVER socket.callbacks().on_read " << (sockets.back().callbacks().on_received? "read assigned":"read not assigned") << std::endl;
+                    LOG_DEBUG("SERVER socket.callbacks().on_read {}", (sockets.back().callbacks().on_received? "read assigned":"read not assigned"));
 
                     //sockets.back().read(); //start reading
                     //sockets.emplace_back(std::move(accepted_socket));
                 }
             }
         );
-        std::cout << "async_server th 3" << std::endl;
+        LOG_DEBUG("async_server th 3");
         //server_socket.create_impl(AF_INET, SOCK_STREAM, IPPROTO_TCP);//TODO: this dont belong here....
 
-        std::cout << "async_server th 4" << std::endl;
+        LOG_DEBUG("async_server th 4");
 
-        std::cout << "*** server socket " << (void*) &server_socket << std::endl;
+        LOG_DEBUG("*** server socket {}", (void*) &server_socket);
         
         ip_socketaddress addr = ip4_sockaddress("127.0.0.1", port);
 
@@ -98,7 +98,6 @@ TEST(AsyncSocketTests, simple_client_server)
         //  char buffer[1024];
         //  auto bytes_received = client_socket.receive(buffer, sizeof(buffer));
         //  if (bytes_received > 0) {
-        //      std::cout << "Server received: " << std::string(buffer, bytes_received) << std::endl;
         //      client_socket.send(buffer, bytes_received); // Echo back
         //  }
         EXPECT_EQ(sockets.size(), 0);
@@ -106,58 +105,56 @@ TEST(AsyncSocketTests, simple_client_server)
 
 
     auto sync_client = ([port](){
-       std::cout << "Socket tests client" << std::endl;
+       LOG_DEBUG("Socket tests client");
        sync::stream_socket<ip_socketaddress> socket;
        ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port);
 
        socket.connect(adr);
        //std::this_thread::sleep_for(std::chrono::microseconds(1000));
        const char* msg = "Hello, Echo Server!";
-       std::cout << "client send: " << msg << std::endl;
+       LOG_DEBUG("client send: {}", msg);
        socket.send(msg, strlen(msg));
        char buffer[1024];
        auto bytes_received = socket.receive(buffer, sizeof(buffer));
        if (bytes_received > 0) {
            std::string msg(buffer, bytes_received);
-           std::cout << "Client received: " << msg << std::endl;
+           LOG_DEBUG("Client received: msg: {}", msg);
            EXPECT_EQ(msg, "Hello, Echo Server!");
        }
     });
 
     auto async_client = [port](){
-        std::cout << "Socket tests client" << std::endl;
+        LOG_DEBUG("Socket tests client");
         acpp::network::async::io_context io;
         async::async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
             async::socket_callbacks {
                 .on_connected = [](async::async_socket_base& s) {
-                    std::cout << "CLIENT Socket connected from AsyncSocketTests.first" << std::endl;
+                    LOG_DEBUG("CLIENT Socket connected from AsyncSocketTests.first");
                     std::string msg("hola");
                     //s.read();
                     s.write(msg.c_str(), msg.size());
                 },
                 .on_received = [&](async::async_socket_base& s, const char* buf, size_t len){
                     std::string msg(buf, len);
-                    std::cout << "CLIENT Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
+                    LOG_DEBUG("CLIENT Socket received from AsyncSocketTests.first msg: {}", msg);
                     EXPECT_EQ(msg, "hola");
                     io.stop();
                 },
                 .on_sent = [](async::async_socket_base& s, size_t length) {
-                    std::cout << "CLIENT Socket sent from AsyncSocketTests.fir st" << std::endl;
+                    LOG_DEBUG("CLIENT Socket sent from AsyncSocketTests.first");
                 },
                 .on_error = [](async::async_socket_base& s, int error_code, const std::string& msg, const std::string& hint) {
-                    std::cout << "CLIENT Socket error from AsyncSocketTests.first error_code: " 
-                        << error_code << " msg: " << msg << " hint: " << hint 
-                        << std::endl;
+                    LOG_DEBUG("CLIENT Socket error from AsyncSocketTests.first error_code: {} msg: {} hint: {}", error_code, msg, hint);
                 }
             });
 
         auto c_res = socket.connect(to_sockaddr(ip4_sockaddress("127.0.0.1", port)));
-        std::cout << "CLIENT Socket connected c_res: " << c_res << std::endl;
+        LOG_DEBUG("CLIENT Socket connected c_res: {}", c_res);
         std::string msg("hola!");
         io.wait_for_input();
         socket.close();
 
-        std::cout << "CLIENT Socket tests client end" << std::endl;
+        LOG_DEBUG("CLIENT Socket tests client end");
     };
     
     std::thread server_th(async_server);
@@ -207,10 +204,10 @@ TEST(AsyncSocketTests, large_write_client_server)
 {
 
     using namespace acpp::network;
-    log_debug("*** Socket tests");
+    LOG_DEBUG("*** Socket tests");
     int port = 6666;
     std::string large_message = random_string(10 * 1000 * 1000); // 5 KB message
-    //std::cout << "Large message: " << large_message << std::endl;
+    //LOG_DEBUG("Large message: " << large_message);
     std::atomic_bool listen_ok = false;
     auto async_server = [&](){
 
@@ -227,14 +224,14 @@ TEST(AsyncSocketTests, large_write_client_server)
                     sessions.emplace_back(std::make_unique<session>(std::move(accepted_socket)));
                     auto& sess = *sessions.back();
 
-                    std::cout << "SERVER ACCEPTED" << std::endl;
+                    LOG_DEBUG("SERVER ACCEPTED");
                     sess.socket.callbacks(async::socket_callbacks {
                         .on_connected = [&](async::async_socket_base& s) {
-                            //std::cout << "SERVER connected fd:" << s.fd() << std::endl;
-                            log_debug("SERVER connected fd:" + std::to_string(s.fd()));
+                            //LOG_DEBUG("SERVER connected fd:" << s.fd());
+                            LOG_DEBUG("SERVER connected fd: {}", s.fd());
                         },
                         .on_disconnected = [&](async::async_socket_base& s) {
-                            log_debug("SERVER disconnected fd:" + std::to_string(s.fd()));
+                            LOG_DEBUG("SERVER disconnected fd: {}", s.fd());
                             io.stop();
                             std::erase_if(sessions, [&](auto& i){
                                 //return i.fd() == s.fd();
@@ -243,19 +240,19 @@ TEST(AsyncSocketTests, large_write_client_server)
                         },
                         .on_received = [&](async::async_socket_base& s, const char* buf, size_t len){
                             total = total + len;
-                            log_debug(std::format("SERVER received fd: {} total: {}", s.fd(), total));
+                            LOG_DEBUG("SERVER received fd: {} total: {}", s.fd(), total);
 
                             //sess.received_data.insert(sess.received_data.end(), buf, buf+len);
                             sess.received_data.append(buf, len);
                             if (sess.pending_data.empty()) {
                                 auto n = s.write(buf, len);
                                 total_sent += n;
-                                log_debug(std::format("SERVER received <write> fd: {} n: {} len: {} total_sent: {}", s.fd(), n, len, total_sent));
+                                LOG_DEBUG("SERVER received <write> fd: {} n: {} len: {} total_sent: {}", s.fd(), n, len, total_sent);
                                 if (n < len) {
 
-                                    log_debug(std::format("SERVER received ************* insert sess.pending_data.size(): {}", sess.pending_data.size() ));
+                                    LOG_DEBUG("SERVER received ************* insert sess.pending_data.size(): {}", sess.pending_data.size() );
                                     sess.pending_data.insert(sess.pending_data.end(), buf + n, buf + len );
-                                    log_debug(std::format("SERVER received ************* insert done"));
+                                    LOG_DEBUG("SERVER received ************* insert done");
                                 }
                             } else {
                                 sess.pending_data.insert(sess.pending_data.end(), buf, buf + len);
@@ -263,12 +260,12 @@ TEST(AsyncSocketTests, large_write_client_server)
 
                         },
                         .on_sent = [&](async::async_socket_base& s, size_t length) {
-                            //log_debug("SERVER on_sent fd:" + std::to_string(s.fd()) + " "  + std::to_string(length));
+                            //LOG_DEBUG("SERVER on_sent fd:" + std::to_string(s.fd()) + " "  + std::to_string(length));
                             if (!sess.pending_data.empty()) {
                                 auto n = s.write(sess.pending_data.c_str(), sess.pending_data.size());
                                 total_sent += n;
                                 if (n > 0) {
-                                    log_debug(std::format("SERVER on_sent fd: {} sent n: {} total_sent: {}", s.fd(), n, total_sent));
+                                    LOG_DEBUG("SERVER on_sent fd: {} sent n: {} total_sent: {}", s.fd(), n, total_sent);
                                     sess.pending_data.erase(sess.pending_data.begin(), sess.pending_data.begin()+ n);
                                 }
                             }
@@ -290,7 +287,7 @@ TEST(AsyncSocketTests, large_write_client_server)
     };
 
     auto async_client = [&](){
-        log_debug("Socket tests client");
+        LOG_DEBUG("Socket tests client");
         while(!listen_ok) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
@@ -300,44 +297,43 @@ TEST(AsyncSocketTests, large_write_client_server)
         async::async_socket_base socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
             async::socket_callbacks {
                 .on_connected = [&](async::async_socket_base& s) {
-                    log_debug("CLIENT Socket connected from AsyncSocketTests.first");
+                    LOG_DEBUG("CLIENT Socket connected from AsyncSocketTests.first");
                     total_sent = s.write(large_message.c_str(), large_message.size());
-                    log_debug("CLIENT Socket sent initial : " +  std::to_string(total_sent));
+                    LOG_DEBUG("CLIENT Socket sent initial : {}", total_sent);
                 },
                 .on_received = [&](async::async_socket_base& s, const char* buf, size_t len){
                     std::string msg(buf, len);
-                    //std::cout << "CLIENT Socket received msg: " << msg << std::endl;
+                    //LOG_DEBUG("CLIENT Socket received msg: " << msg);
                     received_msg.insert(received_msg.end(), buf, buf + len);
-                    log_debug("CLIENT Socket received received_msg.size(): " + std::to_string(received_msg.size()));
-                    //std::cout << "CLIENT Socket received " << msg << "  from AsyncSocketTests.first" << std::endl;
+                    LOG_DEBUG("CLIENT Socket received received_msg.size(): {}", received_msg.size());
+                    //LOG_DEBUG("CLIENT Socket received " << msg << "  from AsyncSocketTests.first");
                     if (received_msg.size() >= large_message.size()) {
-                        log_debug("CLIENT Socket received complete message");
+                        LOG_DEBUG("CLIENT Socket received complete message");
                         bool equal = received_msg == large_message;
                         //EXPECT_EQ(received_msg, large_message);
-                        log_debug(std::format("CLIENT Socket equal: {}", equal));
+                        LOG_DEBUG("CLIENT Socket equal: {}", equal);
                         EXPECT_TRUE(equal);
                         io.stop();
                     }
                 },
                 /* 3307136 -3308160*/ 
                 .on_sent = [&](async::async_socket_base& s, size_t length) {
-                    log_debug("CLIENT sent length: " + std::to_string(length));
+                    LOG_DEBUG("CLIENT sent length: {}", length);
                     auto n = s.write(large_message.c_str() + total_sent, large_message.size() - total_sent);
                     total_sent = total_sent + n;
                 },
                 .on_error = [](async::async_socket_base& s, int error_code, const std::string& msg, const std::string& hint) {
-                    log_debug("CLIENT Socket error from AsyncSocketTests.first error_code: " 
-                        + std::to_string(error_code) + " msg: " + msg + " hint: " +  hint );
+                    LOG_DEBUG("CLIENT Socket error from AsyncSocketTests.first error_code: {} msg: {} hing: {}", error_code, msg, hint );
                 }
             });
 
         auto c_res = socket.connect(to_sockaddr(ip4_sockaddress("127.0.0.1", port)));
-        //std::cout << "CLIENT Socket connected c_res: " << c_res << std::endl;
+        //LOG_DEBUG("CLIENT Socket connected c_res: " << c_res);
         std::string msg("hola!");
         io.wait_for_input();
         socket.close();
 
-        std::cout << "CLIENT Socket tests client end" << std::endl;
+        LOG_DEBUG("CLIENT Socket tests client end");
     };
     
     std::thread server_th(async_server);
@@ -358,11 +354,11 @@ TEST(AsyncSocketTests, large_write_client_server)
 TEST(AsyncSocketTests, exec)
 {
     using namespace acpp::network;
-    std::cout << "*** Socket tests" << std::endl;
+    LOG_DEBUG("*** Socket tests");
     int port = 6664;
     acpp::network::async::io_context io;
     auto async_server = [&]() {
-        std::cout << "async_server th" << std::endl;
+        LOG_DEBUG("async_server th");
         //std::vector<async_socket_base> sockets;
         io.wait_for_input();
     };
@@ -370,7 +366,7 @@ TEST(AsyncSocketTests, exec)
     std::thread server_th(async_server);
 
     io.exec([&]{
-        std::cout << "exec " <<std::endl;
+        LOG_DEBUG("exec");
         io.stop();
     });
 
@@ -386,11 +382,9 @@ TEST(AsyncSocketTests, exec)
 // TEST(AsyncSocketTests, timer)
 // {
 //     using namespace acpp::network;
-//     std::cout << "*** Socket tests" << std::endl;
 //     int port = 6664;
 //     acpp::network::io_context io;
 //     auto async_server = [&]() {
-//         std::cout << "async_server th" << std::endl;
 //         //std::vector<async_socket_base> sockets;
 //         io.wait_for_input();
 //     };
@@ -398,15 +392,15 @@ TEST(AsyncSocketTests, exec)
 //     std::thread server_th(async_server);
 
 //     auto timer1 = io.exec_in([&](timer& t){
-//         std::cout << "timer exec 1" <<std::endl;
+//         LOG_DEBUG("timer exec 1" <<std::endl;
 //     }, 1000);
 
 //     auto timer2 = io.exec_in([&](timer& t){
-//         std::cout << "timer exec 2" <<std::endl;
+//         LOG_DEBUG("timer exec 2" <<std::endl;
 //     }, 2000);
 
 //     auto timer3 = io.exec_in([&](timer& t){
-//         std::cout << "timer exec 3" <<std::endl;
+//         LOG_DEBUG("timer exec 3" <<std::endl;
 //         // we stop the service here
 //         io.stop();
 //     }, 3000);
@@ -424,7 +418,7 @@ TEST(AsyncSocketTests, exec)
 TEST(AsyncSocketTests, timer2)
 {
     using namespace acpp::network;
-    std::cout << "*** Socket tests" << std::endl;
+    LOG_DEBUG("*** Socket tests");
     int port = 6664;
     acpp::network::async::io_context io;
     std::atomic_bool t1_called = false;
@@ -432,20 +426,20 @@ TEST(AsyncSocketTests, timer2)
     std::atomic_bool t3_called = false;
 
     auto async_server = [&]() {
-        std::cout << "async_server th" << std::endl;
+        LOG_DEBUG("async_server th");
 
         async::timer t1(io, 1, [&](async::timer& t) {
-            std::cout << "timer t1 expired" <<std::endl;
+            LOG_DEBUG("timer t1 expired");
             t1_called = true;
         });
 
         async::timer t2(io, 100, [&](async::timer& t) {
-            std::cout << "timer t2 expired" <<std::endl;
+            LOG_DEBUG("timer t2 expired");
             t2_called = true;
         });
 
         async::timer t3(io, 200, [&](async::timer& t) {
-            std::cout << "timer t3 expired" <<std::endl;
+            LOG_DEBUG("timer t3 expired");
             t3_called = true;
             io.stop();
         });
@@ -472,7 +466,7 @@ TEST(AsyncSocketTests, timer2)
 // {
 //     // Simulate a write operation
 //     auto n_write = std::min(len, static_cast<size_t>(test_write_max_write));
-//     std::cout << "Writing data: " << std::string(data, n_write) << std::endl;
+//     LOG_DEBUG("Writing data: " << std::string(data, n_write));
 //     test_write_data += std::string(data, n_write);
 //     return n_write;
 // }
@@ -484,7 +478,7 @@ struct test_writer {
         // Simulate a write operation
         auto n_write = std::min(len, static_cast<size_t>(max_write_));
         std::string msg(buffer, n_write);
-        std::cout << "Writing data: " << msg << std::endl;
+        LOG_DEBUG("Writing data: {}", msg);
         result_ += msg;
         return n_write;
     }
@@ -522,32 +516,32 @@ TEST(AsyncSocketTests, buffered_writer_test)
         size_t buffer_size = 16;
         test_writer tw;
         acpp::network::buffered_writer<test_writer> bw(tw, buffer_size);
-        std::cout << "bw.data_size(): " << bw.data_size() << std::endl;
+        LOG_DEBUG("bw.data_size(): {}", bw.data_size());
 
         auto w = bw.write(msg.c_str(), msg.size());// write 8 to output and 16 to buffer
 
-        std::cout << "bw.data_size(): " << bw.data_size() << " w: "<< w << std::endl;
+        LOG_DEBUG("bw.data_size(): {} w: {}", bw.data_size(), w);
         EXPECT_EQ(w, tw.max_write_+ bw.buffer_size()) << " test2.1";
         EXPECT_EQ(bw.data_size(), buffer_size) << " test2.2";
         //consume written data
         msg.erase(0, w);
 
-        std::cout << "bw.data_size(): " << bw.data_size()  << std::endl;
+        LOG_DEBUG("bw.data_size(): {}", bw.data_size() );
         w = bw.write_buffered(); // write 8 bytes to output from buffer
-        std::cout << "bw.data_size(): " << bw.data_size() << " w: "<< w << std::endl;
+        LOG_DEBUG("bw.data_size(): {} w: {}", bw.data_size(), w);
         EXPECT_EQ(w, tw.max_write_) << " test2.3"; //now there are test_write_max_write bytes free in buffer
-        std::cout << "bw.data_size(): " << bw.data_size() << " w: "<< w << std::endl;
+        LOG_DEBUG("bw.data_size(): {} w: {}", bw.data_size(), w);
         EXPECT_EQ(bw.data_size(), bw.buffer_size() - tw.max_write_   ) << " test2.4";
 
         
-        std::cout << "msg.size(): ***** " << msg.size() << " bw.data_size(): " << bw.data_size() << std::endl;
+        LOG_DEBUG("msg.size(): {}  bw.data_size(): {}", msg.size(), bw.data_size());
         w = bw.write(msg.c_str(), msg.size());// write 0 to output and add 8 to buffer, as buffer is not empty. Buffer is full
         EXPECT_EQ(w, tw.max_write_) << " test2.5"; //now there are test_write_max_write bytes free in buffer
         EXPECT_EQ(bw.data_size(), bw.buffer_size()) << " test2.6";  
 
         msg.erase(0, w);
 
-        std::cout << "msg.size(): ***** " << msg.size() << " bw.data_size(): " << bw.data_size() << std::endl;
+        LOG_DEBUG("msg.size(): {} bw.data_size(): {}", msg.size(), bw.data_size());
         w = bw.write(msg.c_str(), msg.size());// write 0 to ouput and 0 to buffer as it is full
         EXPECT_EQ(w, 0) << " test2.7"; //full buffer
         EXPECT_EQ(bw.data_size(), bw.buffer_size()) << " test2.8";

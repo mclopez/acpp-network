@@ -106,7 +106,8 @@ public:
         LOG_DEBUG("stream this: {}", (void*) this);
     }
 
-    stream(stream_context& c)
+    template<typename Context > 
+    stream(Context& c)
     :side_(c.side()), next_(c) {
         next_.prev_ = this;
         LOG_DEBUG("stream this: {}", (void*) this);
@@ -268,8 +269,8 @@ public:
 
     };
 
-
-    socket_stream(stream_context& c)
+    template<typename Context>
+    socket_stream(Context& c)
     :socket_(AF_INET, SOCK_STREAM, IPPROTO_TCP, c.io()), side_(c.side())
     {
     }

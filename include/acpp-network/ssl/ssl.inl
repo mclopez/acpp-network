@@ -16,7 +16,7 @@ using buffer = std::array<char, 1024*20>; //ojo!!
 
 template<typename Next>
 stream<Next>::stream(side_t side)
-:side_(side), next_(side), ctx_(side), status_(status::closed)
+:side_(side), next_(side), ctx_(std::make_shared<context>(side)), status_(status::closed)
 {
     LOG_DEBUG("ssl::stream<Next>::stream side: {} status: {}", (int)side_, (int)status_); 
     next_.prev_ = this;
@@ -24,15 +24,15 @@ stream<Next>::stream(side_t side)
     if (side == side_t::server) {
         auto c = x509::create_self_signed_cert(x509::Name().cn("xxx").l("l").o("o").st("st"));
         LOG_DEBUG("ssl::stream<Next>::stream: cert: {}", c.first.to_string());
-        ctx_.set_cert(c.first);
-        ctx_.set_pkey(c.second);
+        ctx_->set_cert(c.first);
+        ctx_->set_pkey(c.second);
         //ssl_ = std::make_unique<ssl::Stream>(context_);
 
     }
 
 
 
-    ssl_ = SSL_new(ctx_.handle());
+    ssl_ = SSL_new(ctx_->handle());
     BIO_new_bio_pair(&int_bio, /*0*/ 1024 * 50, &ext_bio, /*0*/ 1024 * 50);
     SSL_set_bio(ssl_, int_bio, int_bio);
     int size = 0;
@@ -43,22 +43,34 @@ stream<Next>::stream(side_t side)
 
  
 template<typename Next>
-stream<Next>::stream(async::stream_context& c)
-:side_(c.side()), next_(c), ctx_(c.side()), status_(status::closed)
+template<typename Context> 
+stream<Next>::stream(Context& c)
+:side_(c.side()), next_(c), ctx_(c.ctx()), status_(status::closed)
 {
     LOG_DEBUG("ssl::stream<Next>::stream side: {} status: {}", (int)side_, (int)status_); 
     next_.prev_ = this;
 
-    if (side_ == side_t::server) {
-        auto c = x509::create_self_signed_cert(x509::Name().cn("xxx").l("l").o("o").st("st"));
-        LOG_DEBUG("ssl::stream<Next>::stream: cert: {}", c.first.to_string());
-        ctx_.set_cert(c.first);
-        ctx_.set_pkey(c.second);
-        //ssl_ = std::make_unique<ssl::Stream>(context_);
-    }
+    // if (side_ == side_t::server) {
+    //     auto start_time = std::chrono::high_resolution_clock::now();
+
+    //     auto c = x509::create_self_signed_cert(x509::Name().cn("xxx").l("l").o("o").st("st"));
+
+    //     auto end_time = std::chrono::high_resolution_clock::now();
+
+    //     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        
+    //     std::cout << "⏱️  Latency create cert: " << duration.count() << "ms" << std::endl;
 
 
-    ssl_ = SSL_new(ctx_.handle());
+
+    //     LOG_DEBUG("ssl::stream<Next>::stream: cert: {}", c.first.to_string());
+    //     ctx_->set_cert(c.first);
+    //     ctx_->set_pkey(c.second);
+    //     //ssl_ = std::make_unique<ssl::Stream>(context_);
+    // }
+
+
+    ssl_ = SSL_new(ctx_->handle());
     BIO_new_bio_pair(&int_bio, /*0*/ 1024 * 5, &ext_bio, /*0*/ 1024 * 5);
     SSL_set_bio(ssl_, int_bio, int_bio);
     int size = 0;
@@ -138,7 +150,7 @@ void stream<Next>::do_connect(const char* buf, size_t len) {
         LOG_DEBUG("ssl::stream::do_connect  side: {} BIO_write e:{} len: {}", (int)side_, e, len); 
     }
     if (status_ == status::closed || status_ == status::connecting) {
-        if (ctx_.side() == side_t::server) {
+        if (side_ == side_t::server) {
             LOG_DEBUG("ssl::stream::do_connect  side: {} SSL_accept", (int)side_); 
             e =  SSL_accept(ssl_);
         }

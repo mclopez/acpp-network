@@ -138,6 +138,22 @@ private:
     SSL_CTX* handle_;
 };
 
+class ssl_stream_context {
+public:
+    // ssl_stream_context(acpp::network::async::io_context& io, side_t side, const std::string& hostname)
+    // :io_(io), side_(side), hostname_(hostname){}
+    ssl_stream_context(acpp::network::async::io_context& io, side_t side, const std::string& hostname);
+    side_t side() { return side_;}
+    const std::string& hostname() { return hostname_;}
+    acpp::network::async::io_context& io() { return io_;}
+    std::shared_ptr<context> ctx() { return context_;}
+private:
+    std::string hostname_;
+    side_t side_;
+    acpp::network::async::io_context& io_;
+    std::shared_ptr<context> context_;
+};
+
 
 template<typename Next = acpp::network::async::null_layer>
 class stream  {
@@ -149,9 +165,11 @@ public:
     using last_type = next_type::last_type;
     enum class status  { closed, connecting, connected, peer_closing, closing};
 
+    [[deprecated]]
     stream(side_t side);
     //stream(acpp::network::async::io_context& io, side_t side);
-    stream(async::stream_context& c);
+    template<typename Context> 
+    stream(Context& c);
 
     virtual ~stream();
 
@@ -198,7 +216,8 @@ private:
     void do_shutdown(const char* buf, size_t len);
 
     side_t side_;
-    context ctx_;
+    //TODO: revise to make it const context instead
+    std::shared_ptr<context> ctx_;
     status status_;
 
     BIO *int_bio;

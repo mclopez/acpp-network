@@ -295,6 +295,24 @@ void context::set_pkey(pkey& pkey) {
     SSL_CTX_use_PrivateKey(handle(), pkey.handle());
 }
 
+ssl_stream_context::ssl_stream_context(acpp::network::async::io_context& io, side_t side, const std::string& hostname)
+:io_(io), side_(side), hostname_(hostname), context_(std::make_shared<context>(side))
+{
+    if (side_ == side_t::server) {
+        //auto start_time = std::chrono::high_resolution_clock::now();
+
+        auto c = x509::create_self_signed_cert(x509::Name().cn("xxx").l("l").o("o").st("st"));
+
+        // auto end_time = std::chrono::high_resolution_clock::now();
+        // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);        
+        // std::cout << "⏱️  Latency create cert: " << duration.count() << "ms" << std::endl;
+
+        LOG_DEBUG("ssl::stream<Next>::stream: cert: {}", c.first.to_string());
+        context_->set_cert(c.first);
+        context_->set_pkey(c.second);
+    }
+
+}
 
 
 } // namespace acpp::network::ssl

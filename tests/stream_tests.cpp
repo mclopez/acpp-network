@@ -244,7 +244,7 @@ void client_server_socket_stream_test() {
     
     io_context io; //
     ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port++);
-    ::acpp::network::async::stream_context c(io, acpp::network::side_t::client, "");
+    ::acpp::network::ssl::ssl_stream_context c(io, acpp::network::side_t::client, "");
 
     stream_t client(c);
     //stream_t server(io, acpp::network::side_t::server);
@@ -257,7 +257,7 @@ void client_server_socket_stream_test() {
     async::async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
         async::socket_callbacks {
             .on_accepted = [&](async::async_socket_base& server, async::async_socket_base&& accepted_socket) {
-                ::acpp::network::async::stream_context c(io, acpp::network::side_t::server, "");
+                ::acpp::network::ssl::ssl_stream_context c(io, acpp::network::side_t::server, "");
                 server_sessons.emplace_back(std::make_unique<stream_t>(c));
                 auto& sess = *server_sessons.back();
                 
@@ -348,7 +348,7 @@ TEST(StreamTests, socket_stream_test2)
 
         LOG_DEBUG("Resolved: {}", to_string(addr));
         
-        ::acpp::network::async::stream_context c(io, acpp::network::side_t::client, hostname);
+        ::acpp::network::ssl::ssl_stream_context c(io, acpp::network::side_t::client, hostname);
         stream_t client(c);
 
         client.on_connected_cb_ = [&]() {
@@ -385,3 +385,103 @@ TEST(StreamTests, socket_stream_test2)
     });
 
 }
+
+// ./build.sh && ./build/tests/acpp-network-tests --gtest_filter=StreamTests.socket_stream_server
+
+TEST(StreamTests, DISABLED_socket_stream_server)
+{
+    using namespace acpp::network::async;
+    using namespace acpp::network;
+    using socket_stream_t = ::acpp::network::async::socket_stream;
+    using ssl_stream_t = ::acpp::network::ssl::stream<socket_stream_t>;
+
+    using stream_t = ::acpp::network::async::stream<ssl_stream_t>;
+    
+    io_context io; //
+    ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port++);
+    ::acpp::network::ssl::ssl_stream_context c(io, acpp::network::side_t::client, "");
+
+    std::vector<std::unique_ptr<stream_t>> server_sessons;
+
+    size_t total = 0, total_sent = 0;
+    async::async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
+        async::socket_callbacks {
+            .on_accepted = [&](async::async_socket_base& server, async::async_socket_base&& accepted_socket) {
+                ::acpp::network::ssl::ssl_stream_context c(io, acpp::network::side_t::server, "");
+                server_sessons.emplace_back(std::make_unique<stream_t>(c));
+                auto& sess = *server_sessons.back();
+                               
+//                LOG_DEBUG("sess: {}", (void*)&sess);
+                sess.last().socket(std::move(accepted_socket));
+
+                sess.on_received_cb_ = [&](const char* buf, size_t len) {
+                    //echo... 
+                    sess.write(buf, len);
+                };
+
+                LOG_DEBUG("SERVER ACCEPTED");
+            }
+        }
+    );
+
+    std::string msg("hello");
+
+    server_socket.bind(to_sockaddr(adr));
+    server_socket.listen(5);
+
+    io.wait_for_input();
+    LOG_DEBUG("test end");
+
+}
+
+// ./build.sh && ./build/tests/acpp-network-tests --gtest_filter=StreamTests.socket_stream_client
+
+TEST(StreamTests, DISABLED_socket_stream_client)
+{
+    using namespace acpp::network::async;
+    using namespace acpp::network;
+    using socket_stream_t = ::acpp::network::async::socket_stream;
+    using ssl_stream_t = ::acpp::network::ssl::stream<socket_stream_t>;
+    using stream_t = ::acpp::network::async::stream<ssl_stream_t>;
+    
+    io_context io; //
+    ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port++);
+
+    size_t total = 0, total_sent = 0;
+
+    std::string msg("hello");
+    ::acpp::network::ssl::ssl_stream_context c(io, acpp::network::side_t::client, "");
+    stream_t client(c);
+
+    std::chrono::steady_clock::time_point start_time_(std::chrono::high_resolution_clock::now());
+
+    client.on_connected_cb_ = [&]() {
+    
+        auto end_time = std::chrono::high_resolution_clock::now();
+
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time_);
+        
+        std::cout << "✅ SSL Handshake Complete!" << std::endl;
+        std::cout << "⏱️  Latency (Connect + Handshake): " << duration.count() << "ms" << std::endl;
+
+
+        LOG_DEBUG("client.on_connected_cb_ sending msg: '{}'", msg);
+        client.write(msg.c_str(), msg.size());
+    };
+    std::string msg2;
+    client.on_received_cb_ = [&](const char* buf, size_t size) {
+        msg2 = std::string(buf, size);
+        LOG_DEBUG("client.on_received_cb_ sending msg2: '{}'", msg2);
+        io.stop();
+    };
+
+
+
+    client.last().connect(adr);
+
+    io.wait_for_input();
+    EXPECT_EQ(msg, msg2);
+    LOG_DEBUG("test end");
+
+}
+

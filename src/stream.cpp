@@ -1,5 +1,5 @@
 #include <acpp-network/stream.h>
-#include <detail/common.h>
+#include <acpp-network/detail/common.h>
 
 namespace acpp::network {
 

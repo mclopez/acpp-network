@@ -386,6 +386,35 @@ TEST(StreamTests, socket_stream_test2)
 
 }
 
+
+namespace {
+
+class timer {
+public:
+    void start(std::string msg) {
+        msg_ = msg;
+        start_time_ = std::chrono::high_resolution_clock::now();
+    }
+
+    void stop(){
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time_);
+        std::cout << msg_ << " duration: " << duration.count() << std::endl;
+    }
+private:
+    std::string msg_;    
+    std::chrono::time_point<std::chrono::high_resolution_clock> start_time_;
+    //std::chrono::steady_clock::time_point start_;
+};
+
+}
+
+std::string random_string(size_t length,
+                          const std::string& charset =
+                              "0123456789"
+                              "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                              "abcdefghijklmnopqrstuvwxyz");
+
 // ./build.sh && ./build/tests/acpp-network-tests --gtest_filter=StreamTests.socket_stream_server
 
 TEST(StreamTests, DISABLED_socket_stream_server)
@@ -404,27 +433,31 @@ TEST(StreamTests, DISABLED_socket_stream_server)
     std::vector<std::unique_ptr<stream_t>> server_sessons;
 
     size_t total = 0, total_sent = 0;
+    ::timer t;
+    ::acpp::network::ssl::ssl_stream_context context(io, acpp::network::side_t::server, "");
     async::async_socket_base server_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP, io, 
         async::socket_callbacks {
             .on_accepted = [&](async::async_socket_base& server, async::async_socket_base&& accepted_socket) {
-                ::acpp::network::ssl::ssl_stream_context c(io, acpp::network::side_t::server, "");
-                server_sessons.emplace_back(std::make_unique<stream_t>(c));
+                t.start("create");
+                server_sessons.emplace_back(std::make_unique<stream_t>(context));
                 auto& sess = *server_sessons.back();
                                
-//                LOG_DEBUG("sess: {}", (void*)&sess);
                 sess.last().socket(std::move(accepted_socket));
 
                 sess.on_received_cb_ = [&](const char* buf, size_t len) {
+                    std::cout << "on_received_cb_ " << std::string(buf, len) << std::endl;
                     //echo... 
+                    t.stop();
                     sess.write(buf, len);
                 };
+                t.stop();
+                t.start("received");
 
                 LOG_DEBUG("SERVER ACCEPTED");
             }
         }
     );
 
-    std::string msg("hello");
 
     server_socket.bind(to_sockaddr(adr));
     server_socket.listen(5);
@@ -433,6 +466,7 @@ TEST(StreamTests, DISABLED_socket_stream_server)
     LOG_DEBUG("test end");
 
 }
+
 
 // ./build.sh && ./build/tests/acpp-network-tests --gtest_filter=StreamTests.socket_stream_client
 
@@ -449,34 +483,32 @@ TEST(StreamTests, DISABLED_socket_stream_client)
 
     size_t total = 0, total_sent = 0;
 
-    std::string msg("hello");
+    //std::string msg("hello");
+    std::string msg(random_string(1024*10));
+
     ::acpp::network::ssl::ssl_stream_context c(io, acpp::network::side_t::client, "");
     stream_t client(c);
-
-    std::chrono::steady_clock::time_point start_time_(std::chrono::high_resolution_clock::now());
+    ::timer t;
 
     client.on_connected_cb_ = [&]() {
     
-        auto end_time = std::chrono::high_resolution_clock::now();
-
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time_);
-        
-        std::cout << "✅ SSL Handshake Complete!" << std::endl;
-        std::cout << "⏱️  Latency (Connect + Handshake): " << duration.count() << "ms" << std::endl;
-
+        t.stop();
 
         LOG_DEBUG("client.on_connected_cb_ sending msg: '{}'", msg);
+        t.start("send msg");
         client.write(msg.c_str(), msg.size());
     };
     std::string msg2;
     client.on_received_cb_ = [&](const char* buf, size_t size) {
-        msg2 = std::string(buf, size);
-        LOG_DEBUG("client.on_received_cb_ sending msg2: '{}'", msg2);
-        io.stop();
+        t.stop();
+        msg2 += std::string(buf, size);
+        //LOG_DEBUG("client.on_received_cb_ sending msg2: '{}'", msg2);
+        if (msg.size() == msg2.size())
+            io.stop();
     };
 
 
-
+    t.start("connect");
     client.last().connect(adr);
 
     io.wait_for_input();

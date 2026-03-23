@@ -4,6 +4,7 @@
 
 #include <openssl/ssl.h>
 
+#include <algorithm>
 
 //#include <openssl/ssl.h>
 #include <array>
@@ -33,9 +34,11 @@ stream<Next>::stream(side_t side)
 
 
     ssl_ = SSL_new(ctx_->handle());
-    BIO_new_bio_pair(&int_bio, /*0*/ 1024 * 50, &ext_bio, /*0*/ 1024 * 50);
+    BIO_new_bio_pair(&int_bio, 0 /*1024 * 50*/, &ext_bio, 0 /* 1024 * 50*/);
     SSL_set_bio(ssl_, int_bio, int_bio);
     int size = 0;
+    //BIO_set_write_buf_size(ext_bio, 1024 * 64); // Set to 64KB
+
     BIO_get_write_buf_size(ext_bio, size);
     LOG_DEBUG("BIO_get_write_buf_size(ext_bio) {}", size); 
 
@@ -354,13 +357,14 @@ size_t stream<Next>::write(const char* buf, size_t len)  {
     LOG_DEBUG("ssl::stream::write_output len: {}", len);
     auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
     if (status_ == status::connected) {
-        int totalLen = 0;
-        while (totalLen < len)  {
-            int e = SSL_write(ssl_, buf + totalLen, len - totalLen);
+        int total_len = 0;
+        while (total_len < len)  {
+            size_t partial_len = std::min(len - total_len, (size_t)1024*4);
+            int e = SSL_write(ssl_, buf + total_len, partial_len);
             //SSL_MODE_ENABLE_PARTIAL_WRITE option of SSL_CTX_set_mode(3). 
             LOG_DEBUG("ssl::stream::write_output len: {} written {}", len, e);
             if (e > 0)  {
-                totalLen += e;
+                total_len += e;
             }
             else {
                 break;
@@ -373,18 +377,19 @@ size_t stream<Next>::write(const char* buf, size_t len)  {
                 //break;    //todo: why???
             }
         }
-        int n;
-        buffer b;
-        while (n = ::BIO_read(ext_bio, b.data(), b.size()), n > 0) {
-            LOG_DEBUG("ssl::stream::write_output BIO_read: n {}", n);
-            next_.template write<Chain>(b.data(), n);       
-            //break;    //todo: why???
-        }
+        // int n;
+        // buffer b;
+        // while (n = ::BIO_read(ext_bio, b.data(), b.size()), n > 0) {
+        //     LOG_DEBUG("ssl::stream::write_output BIO_read: n {}", n);
+        //     next_.template write<Chain>(b.data(), n);       
+        //     //break;    //todo: why???
+        // }
 
     } else {
         LOG_DEBUG("ssl::stream::write_output invalid state");
         //throw Exception("ssl::stream::write_output: invalid state");
     }
+
     return len;
 }
 

@@ -205,8 +205,10 @@ size_t write(const char* buffer, size_t len) {
 
 size_t so_write(const char* buffer, size_t len) {
     size_t result = 0;
-    while(true) {
-        //TODO: remove this limit 
+    //LOG_ERROR("so_write fd_: {} len: {}", fd_, len);
+
+    while(len > 0) {
+        //TODO: remove this limit?
         ssize_t len_aux = std::min(len, (size_t)1024 * 4); 
         auto n = so_write_internal(buffer, len_aux);
         if (n == 0) {
@@ -218,6 +220,7 @@ size_t so_write(const char* buffer, size_t len) {
     }
     return result;
 }
+
 
 size_t so_write_internal(const char* buffer, size_t len) {
     auto n = ::send(fd_, buffer, len, 0);
@@ -456,13 +459,6 @@ struct io_context_pimpl {
                                 break;
                             }
 
-                            // } else if (n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                            //     // No more data to read
-                            //     break;
-                            // } else {
-                            //     break;
-                            // }
-                            //break;
                         }
 
                     }

@@ -307,10 +307,12 @@ ssl_stream_context::ssl_stream_context(acpp::network::async::io_context& io, sid
         // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);        
         // std::cout << "⏱️  Latency create cert: " << duration.count() << "ms" << std::endl;
 
+        //SSL_CTX_set_mode(ctx, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
         LOG_DEBUG("ssl::stream<Next>::stream: cert: {}", c.first.to_string());
         context_->set_cert(c.first);
         context_->set_pkey(c.second);
     }
+    //SSL_CTX_set_mode(context_->handle(), SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
 }
 

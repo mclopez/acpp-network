@@ -9,7 +9,7 @@
 #include <acpp-network/socket.h>
 #include <acpp-network/socket.inl>
 #include <detail/common.h>
-
+#include "utils.h"
 
 TEST(AsyncSocketTests, simple_client_server)
 {
@@ -171,23 +171,6 @@ TEST(AsyncSocketTests, simple_client_server)
 }
 
 
-std::string random_string(size_t length,
-                          const std::string& charset =
-                              "0123456789"
-                              "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                              "abcdefghijklmnopqrstuvwxyz")
-{
-    static std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<> dist(0, charset.size() - 1);
-
-    std::string result;
-    result.reserve(length);
-
-    for (size_t i = 0; i < length; ++i) {
-        result.push_back(charset[dist(rng)]);
-    }
-    return result;
-}
 
 struct large_write_client_server_sesson {
 public:

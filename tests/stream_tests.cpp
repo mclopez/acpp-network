@@ -1,6 +1,5 @@
 #include <iostream>
 #include <thread>
-#include <random>
 #include <format>
 
 #include <gtest/gtest.h> // googletest header file  
@@ -14,7 +13,7 @@
 #include <acpp-network/ssl/ssl.inl>
 
 #include <detail/common.h>
-
+#include "utils.h"
 
 int port = 8080;
 
@@ -387,37 +386,11 @@ TEST(StreamTests, socket_stream_test2)
 }
 
 
-namespace {
 
-class timer {
-public:
-    void start(std::string msg) {
-        msg_ = msg;
-        start_time_ = std::chrono::high_resolution_clock::now();
-    }
-
-    void stop(){
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time_);
-        std::cout << msg_ << " duration: " << duration.count() << std::endl;
-    }
-private:
-    std::string msg_;    
-    std::chrono::time_point<std::chrono::high_resolution_clock> start_time_;
-    //std::chrono::steady_clock::time_point start_;
-};
-
-}
-
-std::string random_string(size_t length,
-                          const std::string& charset =
-                              "0123456789"
-                              "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                              "abcdefghijklmnopqrstuvwxyz");
 
 // ./build.sh && ./build/tests/acpp-network-tests --gtest_filter=StreamTests.socket_stream_server
 
-TEST(StreamTests, DISABLED_socket_stream_server)
+void socket_stream_server(int port)
 {
     using namespace acpp::network::async;
     using namespace acpp::network;
@@ -427,7 +400,7 @@ TEST(StreamTests, DISABLED_socket_stream_server)
     using stream_t = ::acpp::network::async::stream<ssl_stream_t>;
     
     io_context io; //
-    ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port++);
+    ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port);
     ::acpp::network::ssl::ssl_stream_context c(io, acpp::network::side_t::client, "");
 
     std::vector<std::unique_ptr<stream_t>> server_sessons;
@@ -450,6 +423,10 @@ TEST(StreamTests, DISABLED_socket_stream_server)
                     t.stop();
                     sess.write(buf, len);
                 };
+                sess.on_disconnected_cb_ = [&]() {
+                    std::cout << "on_disconnected_cb_ " << std::endl;
+                    io.stop();
+                };
                 t.stop();
                 t.start("received");
 
@@ -470,7 +447,7 @@ TEST(StreamTests, DISABLED_socket_stream_server)
 
 // ./build.sh && ./build/tests/acpp-network-tests --gtest_filter=StreamTests.socket_stream_client
 
-TEST(StreamTests, DISABLED_socket_stream_client)
+void socket_stream_client(int port)
 {
     using namespace acpp::network::async;
     using namespace acpp::network;
@@ -479,7 +456,7 @@ TEST(StreamTests, DISABLED_socket_stream_client)
     using stream_t = ::acpp::network::async::stream<ssl_stream_t>;
     
     io_context io; //
-    ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port++);
+    ip_socketaddress adr = ip4_sockaddress("127.0.0.1", port);
 
     size_t total = 0, total_sent = 0;
 
@@ -502,9 +479,13 @@ TEST(StreamTests, DISABLED_socket_stream_client)
     client.on_received_cb_ = [&](const char* buf, size_t size) {
         t.stop();
         msg2 += std::string(buf, size);
-        //LOG_DEBUG("client.on_received_cb_ sending msg2: '{}'", msg2);
-        if (msg.size() == msg2.size())
-            io.stop();
+        LOG_DEBUG("client.on_received_cb_ sending msg2: '{}'", msg2);
+        if (msg.size() == msg2.size()) {
+            client.disconnect();
+        }
+    };
+    client.on_disconnected_cb_ = [&] () {
+        io.stop();
     };
 
 
@@ -517,3 +498,16 @@ TEST(StreamTests, DISABLED_socket_stream_client)
 
 }
 
+TEST(StreamTests, socket_stream_server_client)
+{
+    std::thread server([&](){
+        socket_stream_server(port);
+    });
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::thread client([&](){
+        socket_stream_client(port);
+    });
+
+    client.join();
+    server.join();
+}

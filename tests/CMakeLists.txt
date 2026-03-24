@@ -11,6 +11,7 @@ add_executable(acpp-network-tests
     socket_tests.cpp
     async_tests.cpp
     stream_tests.cpp
+    utils.cpp
 )
 
 target_include_directories(acpp-network-tests 

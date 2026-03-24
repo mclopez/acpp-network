@@ -286,7 +286,8 @@ public:
             on_connected<Chain>();
         };
         socket_.callbacks().on_disconnected = [&](async::async_socket_base& s) {
-            //LOG_DEBUG("socket_stream disconnected fd:" + std::to_string(s.fd()));
+            LOG_DEBUG("socket_stream disconnected fd: {} side: {}", s.fd(), (int)side_);
+            
             on_disconnected<Chain>();
         };
         socket_.callbacks().on_received = [&](async::async_socket_base& s, const char* buf, size_t len){

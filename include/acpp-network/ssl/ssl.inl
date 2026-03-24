@@ -137,7 +137,7 @@ void stream<Next>::connect() {
 template<typename Next>
 template <typename Chain>
 void stream<Next>::on_connected() { 
-    LOG_DEBUG("ssl::stream::on_connected status:{} ctx_.type():{}", (int)status_, (int)ctx_.side());
+    LOG_DEBUG("ssl::stream::on_connected status:{} ctx_.type():{}", (int)status_, (int)side_);
     if (side_ == side_t::client) {
         do_connect<Chain>(nullptr, 0);
     }
@@ -214,8 +214,12 @@ void stream<Next>::do_connect(const char* buf, size_t len) {
 template<typename Next>
 template <typename Chain>
 void stream<Next>::on_disconnected() { 
-    LOG_DEBUG("ssl::stream::on_disconnected status:{} ctx_.type():{}", (int)status_, (int)ctx_.side());
-    //do_shutdown<Chain>(nullptr, 0);
+    LOG_DEBUG("ssl::stream::on_disconnected status:{} ctx_.type():{}", (int)status_, (int)side_);
+    //already disconnected
+    auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
+    if (prior)
+        prior->template on_disconnected<Chain>();
+
 }
 
 

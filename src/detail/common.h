@@ -7,8 +7,8 @@
 #include <format>
 
 
-//#define LOG_DEBUG(...)    acpp::network::log_debug(std::format(__VA_ARGS__))
-#define LOG_DEBUG(...)    {}
+#define LOG_DEBUG(...)    acpp::network::log_debug(std::format(__VA_ARGS__))
+//#define LOG_DEBUG(...)    {}
 #define LOG_ERROR(...)    acpp::network::log_error(std::format(__VA_ARGS__))
 
 

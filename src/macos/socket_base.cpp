@@ -14,7 +14,7 @@
 //#include <acpp-network/log.h>
 
 #include <acpp-network/socket_base.h>
-#include <detail/common.h>
+#include <acpp-network/detail/common.h>
 
 namespace acpp::network {
 

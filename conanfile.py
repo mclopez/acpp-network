@@ -1,5 +1,5 @@
 from conan import ConanFile
-from conan.tools.cmake import CMake, cmake_layout
+from conan.tools.cmake import CMake, CMakeToolchain, cmake_layout
 from conan.tools.files import copy
 
 class LibacppNetworkConan(ConanFile):
@@ -14,11 +14,11 @@ class LibacppNetworkConan(ConanFile):
     
     # Binary configuration
     settings = "os", "compiler", "build_type", "arch"
-    options = {"shared": [True, False], "fPIC": [True, False]}
-    default_options = {"shared": False, "fPIC": True}
+    options = {"shared": [True, False], "fPIC": [True, False], "log_level": ["0", "1"]}
+    default_options = {"shared": False, "fPIC": True, "log_level": "0" }
     
     # Add generators
-    generators = "CMakeDeps", "CMakeToolchain"
+    generators = "CMakeDeps" #, "CMakeToolchain"
     
     # Sources are located in the same place as this recipe
     exports_sources = "CMakeLists.txt", "src/*", "include/*", "test/*"
@@ -46,14 +46,24 @@ class LibacppNetworkConan(ConanFile):
         cmake.configure()
         cmake.build()
 
+    def generate(self):
+        tc = CMakeToolchain(self)
+        
+        if self.options and self.options.log_level:
+            # Adds -DACPP_ENABLE_LOGS directly to the command line
+            tc.preprocessor_definitions["LOG_LEVEL"] = self.options.log_level
+                        
+        tc.generate()
+
     def package(self):
         cmake = CMake(self)
         cmake.install()
 
     def package_info(self):
-        self.cpp_info.libs = ["acppNetwork"]
+        self.cpp_info.defines.append(f"LOG_LEVEL={str(self.options.log_level)}")
+        self.cpp_info.libs = ["acpp-network"]
         self.cpp_info.set_property("cmake_file_name", "acpp-network")
-        self.cpp_info.set_property("cmake_target_name", "acpp-json::acppNetwork")
+        self.cpp_info.set_property("cmake_target_name", "acpp-network::acpp-network")
         self.cpp_info.includedirs = ["include"]
         self.cpp_info.requires = ["spdlog::spdlog", "openssl::openssl"]
         if self.options.shared:

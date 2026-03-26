@@ -8,7 +8,7 @@
 
 #include <acpp-network/socket.h>
 #include <acpp-network/socket.inl>
-#include <detail/common.h>
+#include <acpp-network/detail/common.h>
 #include "utils.h"
 
 TEST(AsyncSocketTests, simple_client_server)

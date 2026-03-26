@@ -12,7 +12,7 @@
 #include <acpp-network/ssl/ssl.h>
 #include <acpp-network/ssl/ssl.inl>
 
-#include <detail/common.h>
+#include <acpp-network/detail/common.h>
 #include "utils.h"
 
 int port = 8080;

@@ -21,7 +21,7 @@
 #include <format>
 #include <algorithm>
 
-#include <detail/common.h>
+#include <acpp-network/detail/common.h>
 #include <acpp-network/address.h>
 #include <acpp-network/socket_base.h>
 

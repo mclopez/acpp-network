@@ -2,7 +2,7 @@
 #include <iostream>
 #include <mutex>
 
-#include <detail/common.h>
+#include <acpp-network/detail/common.h>
 
 
 namespace acpp::network {

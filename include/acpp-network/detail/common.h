@@ -6,10 +6,28 @@
 #include <mutex>
 #include <format>
 
+#define LOG_LEVEL_DEBUG 0
+#define LOG_LEVEL_ERROR 1
 
+#define DEFAULT_LOG_LEVEL 0
+
+#ifndef LOG_LEVEL 
+#define LOG_LEVEL DEFAULT_LOG_LEVEL
+#endif
+
+#if LOG_LEVEL <= LOG_LEVEL_DEBUG
 #define LOG_DEBUG(...)    acpp::network::log_debug(std::format(__VA_ARGS__))
-//#define LOG_DEBUG(...)    {}
+#else
+#define LOG_DEBUG(...)    {}
+#endif
+
+
+#if LOG_LEVEL <= LOG_LEVEL_ERROR
 #define LOG_ERROR(...)    acpp::network::log_error(std::format(__VA_ARGS__))
+#else
+#define LOG_ERROR(...)    {}
+#endif
+
 
 
 namespace acpp::network {

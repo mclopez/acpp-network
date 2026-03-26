@@ -8,7 +8,7 @@
 
 #include <openssl/x509v3.h>
 
-#include <detail/common.h>
+#include <acpp-network/detail/common.h>
 
 namespace acpp::network::ssl {
 

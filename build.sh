@@ -8,4 +8,4 @@
 
 #cmake --build ./build/  --config Release -v --parallel
 
-conan build conanfile.py
+conan build conanfile.py --build=missing

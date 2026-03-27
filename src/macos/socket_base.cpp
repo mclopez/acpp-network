@@ -10,8 +10,10 @@
 #include <iostream>
 #include <sstream>
 #include <unordered_map>
+#include <format>
 
 //#include <acpp-network/log.h>
+#include <acpp-network/utils.h>
 
 #include <acpp-network/socket_base.h>
 #include <acpp-network/detail/common.h>
@@ -199,8 +201,11 @@ public:
 
 
 size_t write(const char* buffer, size_t len) {
-    //return write_buffer_.write(buffer, len);
-    return so_write(buffer, len);
+    //acpp::network::timer t;
+    //t.start("write socket");
+    auto n =  so_write(buffer, len);
+    //t.stop();
+    return n;
 }
 
 size_t so_write(const char* buffer, size_t len) {
@@ -442,7 +447,10 @@ struct io_context_pimpl {
                             if (n > 0) {        
                                 LOG_DEBUG("io_context::wait_for_input EVFILT_READ n: {}", n);
                                 if (data->callbacks_.on_received){
+                                    //acpp::network::timer t;
+                                    //t.start(std::format("on_received n: {}", n));
                                     data->callbacks_.on_received(*(data->parent_), buffer, n); 
+                                    //t.stop();
                                 }
                             } else if (n == 0)    {
                                 data->callbacks_.on_disconnected(*(data->parent_)); 

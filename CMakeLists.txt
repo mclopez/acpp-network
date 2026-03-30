@@ -25,3 +25,11 @@ endif()
 
 
 
+install(TARGETS acpp-network DESTINATION lib)
+
+install(DIRECTORY include/acpp-network/
+        DESTINATION include/acpp-network/
+        FILES_MATCHING
+        PATTERN "*.h"
+        PATTERN "*.inl"
+        PATTERN "*.hpp")

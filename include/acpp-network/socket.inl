@@ -6,7 +6,7 @@
 
 #include <iostream>
 
-#include <detail/common.h>
+#include <acpp-network/detail/common.h>
 
 #include <acpp-network/socket.h>
 

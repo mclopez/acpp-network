@@ -2,15 +2,31 @@
 #define NOMINMAX
 #endif
 
+#include <cstdio>
+
+
 #include <openssl/ssl.h>
 
 #include <acpp-network/ssl/ssl.h>
 
 #include <openssl/x509v3.h>
 
-#include <detail/common.h>
+#include <acpp-network/detail/common.h>
 
 namespace acpp::network::ssl {
+
+struct File {
+
+    File(const std::string& file, const std::string& params = "r"){
+        file_ = fopen((char*)file.c_str(), params.c_str());
+        LOG_ERROR("sfile_: {}", (void*)file_);
+    }
+
+    ~File() { if (file_) fclose(file_); }
+
+    FILE* file_ = nullptr;
+};
+
 
 
 using BigNum = std::unique_ptr<::BIGNUM, decltype(&::BN_free)>;
@@ -40,6 +56,13 @@ pkey::pkey()
 
 }
 
+pkey::pkey(EVP_PKEY* x)
+:handle_(x) {
+    if (handle_)
+        EVP_PKEY_up_ref(handle_);
+}
+
+
 pkey::pkey(pkey&& x)
 :handle_(x.handle_) 
 {
@@ -47,9 +70,20 @@ pkey::pkey(pkey&& x)
 }
 
 
+
 pkey::~pkey() {
 
 }
+
+pkey pkey::load_from_file(const std::string& pk_file) {
+    File file(pk_file);
+    if (file.file_)
+        return PEM_read_PrivateKey(file.file_, NULL, NULL, NULL);
+    else 
+        return nullptr;
+}
+
+
 
 x509::~x509() {
 
@@ -94,6 +128,11 @@ x509::x509(x509&& x)
     x.handle_ = nullptr;
 }
 
+x509::x509(X509* x)
+:handle_(x) {
+    if (handle_)
+        X509_up_ref(handle_);
+}
 
 
 std::string x509::to_string() {
@@ -154,6 +193,18 @@ std::pair<x509, pkey>  x509::create_cert(const x509::Name& n) {
     return result;
 }
 
+x509 x509::load_from_file(const std::string& cert_file) {
+    File file(cert_file);
+    if (file.file_) {
+        auto result = PEM_read_X509(file.file_, NULL, NULL, NULL);
+        if (!result) {
+            LOG_ERROR("Invalid cert file: {}", cert_file);
+            throw std::string("no file: ") + cert_file;
+        }
+        return result;
+    }
+    return nullptr;
+}
 
 
 
@@ -307,10 +358,12 @@ ssl_stream_context::ssl_stream_context(acpp::network::async::io_context& io, sid
         // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);        
         // std::cout << "⏱️  Latency create cert: " << duration.count() << "ms" << std::endl;
 
+        //SSL_CTX_set_mode(ctx, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
         LOG_DEBUG("ssl::stream<Next>::stream: cert: {}", c.first.to_string());
         context_->set_cert(c.first);
         context_->set_pkey(c.second);
     }
+    //SSL_CTX_set_mode(context_->handle(), SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
 }
 

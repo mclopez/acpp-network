@@ -69,7 +69,7 @@ private:
 class pkey {
 public:
     pkey();
-    pkey(void *);
+    pkey(EVP_PKEY *);
     pkey(const pkey& x);
     pkey(pkey&& x);
     ~pkey();
@@ -90,7 +90,7 @@ public:
         PARAM(cn);
     };
     x509();
-    x509(void *);
+    x509(X509*);
     x509(const X509& x);
     x509(x509&& x);
     //TODO: needede???
@@ -140,8 +140,6 @@ private:
 
 class ssl_stream_context {
 public:
-    // ssl_stream_context(acpp::network::async::io_context& io, side_t side, const std::string& hostname)
-    // :io_(io), side_(side), hostname_(hostname){}
     ssl_stream_context(acpp::network::async::io_context& io, side_t side, const std::string& hostname);
     side_t side() { return side_;}
     const std::string& hostname() { return hostname_;}

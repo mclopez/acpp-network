@@ -6,12 +6,14 @@
 
 
 #include <openssl/ssl.h>
+#include <openssl/x509v3.h>
+#include <openssl/bio.h>
 
 #include <acpp-network/ssl/ssl.h>
 
-#include <openssl/x509v3.h>
-
 #include <acpp-network/detail/common.h>
+#include <acpp-network/utils.h>
+
 
 namespace acpp::network::ssl {
 
@@ -297,6 +299,21 @@ context::context(side_t s)
 
     //SSL_CTX_set_options(ctx_, SSL_OP_IGNORE_UNEXPECTED_EOF);
     SSL_CTX_set_mode(handle_,  SSL_MODE_ENABLE_PARTIAL_WRITE);
+
+    //SSL_CTX_set_min_proto_version(handle_, TLS1_3_VERSION);
+    //SSL_CTX_set1_groups_list(handle_, "X25519:P-256");
+    LOG_INFO("ssl::context::context");
+
+    //SSL_CTX_set_info_callback(handle_, ssl_info_callback);
+
+
+    //SSL_CTX_set_msg_callback(handle_, ::msg_callback);
+
+
+
+    //SSL_CTX_set_min_proto_version(handle_, TLS1_2_VERSION);
+    //SSL_CTX_set_max_proto_version(handle_, TLS1_2_VERSION);
+
 }
 
 
@@ -368,4 +385,14 @@ ssl_stream_context::ssl_stream_context(acpp::network::async::io_context& io, sid
 }
 
 
+
+
+
+
+
+
+
+
+
 } // namespace acpp::network::ssl
+

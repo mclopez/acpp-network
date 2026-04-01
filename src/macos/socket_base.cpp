@@ -274,6 +274,7 @@ async_socket_base::async_socket_base(int domain, int type, int protocol, io_cont
 }
 
 async_socket_base::async_socket_base(int domain, int type, int protocol, fd_type fd, io_context& io, socket_callbacks&& callbacks) {
+    LOG_DEBUG("async_socket_base constructor fd: {} {}", fd, (void*) this);
     pimpl_ =  std::make_unique<socket_base_pimpl>(domain, type, protocol, fd, io, std::move(callbacks));
     pimpl_->parent_ = this;
     io.add_socket(*this);
@@ -410,6 +411,7 @@ struct io_context_pimpl {
     void wait_for_input() {
         run_ = true;
         while (run_) {
+            //acpp::network::timer t("wait_for_input"); 
             struct kevent events[5];
             int nev = kevent(kq_, NULL, 0, events, sizeof(events)/sizeof(struct kevent), NULL);
             if (nev < 0) {
@@ -431,15 +433,23 @@ struct io_context_pimpl {
                             }
                         } else {
                             LOG_DEBUG("New connection accepted, fd: {}", new_fd);
+
+            //int flags = fcntl(new_fd, F_GETFL, 0);
+            //fcntl(new_fd, F_SETFL, flags | O_NONBLOCK);
+
                             if (data->callbacks_.on_accepted) {
                                 async_socket_base new_socket(data->domain_, data->type_, data->protocol_, new_fd, *data->io_, socket_callbacks{});
+
+
+
+
                                 new_socket.pimpl_->ask_read_event();
                                 new_socket.pimpl_->connected_ = true;
                                 data->callbacks_.on_accepted(*data->parent_, std::move(new_socket));
                             }
                         }
                     } else if (data->callbacks_.on_received || data->callbacks_.on_disconnected) {  
-                        char buffer[4 * 1024]; //TODO: make this dynamic or configurable
+                        char buffer[8* 1024]; //TODO: make this dynamic or configurable
                         LOG_DEBUG("io_context::wait_for_input EVFILT_READ data: {}", events[i].data);
                         ssize_t n;
                         while(true) {

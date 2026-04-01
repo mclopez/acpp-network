@@ -93,6 +93,7 @@ private:
     acpp::network::async::io_context& io_;
 };
 
+//first in the chain
 template<typename Next>
 class stream {
 public:
@@ -101,14 +102,14 @@ public:
     using chain_type = append_to_tuple_t<typename Next::chain_type, stream* >;
     using last_type = next_type::last_type;
 
-    stream(side_t side):side_(side), next_(side) {
+    stream(side_t side):side_(side), next_(chain_, side) {
         next_.prev_ = this;
         LOG_DEBUG("stream this: {}", (void*) this);
     }
 
     template<typename Context > 
     stream(Context& c)
-    :side_(c.side()), next_(c) {
+    :side_(c.side()), next_(chain_, c) {
         next_.prev_ = this;
         LOG_DEBUG("stream this: {}", (void*) this);
     }
@@ -177,6 +178,7 @@ private:
     void* prev_;
     Next next_;
     side_t side_;
+    chain_type chain_;
 };
 
 template<typename Next= null_layer>
@@ -187,7 +189,8 @@ public:
     using chain_type = append_to_tuple_t<typename next_type::chain_type, layer* >;
     using last_type = next_type::last_type;
 
-    layer(side_t side): side_(side), next_(side) {
+    template <typename Chain>
+    layer(Chain& chain, side_t side): side_(side), next_(side) {
         next_.prev_ = this;
     }
 
@@ -269,8 +272,8 @@ public:
 
     };
 
-    template<typename Context>
-    socket_stream(Context& c)
+    template<typename Chain, typename Context>
+    socket_stream(Chain& chain, Context& c)
     :socket_(AF_INET, SOCK_STREAM, IPPROTO_TCP, c.io()), side_(c.side())
     {
     }

@@ -74,7 +74,8 @@ public:
     };
 
 
-    fake_endpoint(acpp::network::side_t side):side_(side){}    
+    template<typename Chain>
+    fake_endpoint(Chain& chain, acpp::network::side_t side):side_(side){}    
 
     void* prev_; 
 

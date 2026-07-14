@@ -6,11 +6,13 @@
 
 #include <acpp-network/stream.h>
 
-
+//#define ACPP_BIO
 
 typedef struct ssl_ctx_st SSL_CTX;
 
 typedef struct bio_st BIO;
+typedef struct bio_method_st BIO_METHOD;
+
 typedef struct x509_st X509;
 typedef struct evp_pkey_st EVP_PKEY;
 
@@ -25,40 +27,6 @@ public:
 private:
     std::string msg_;
 };
-
-
-// struct ssl_context_deleter {
-//     void operator()(SSL_CTX* ctx) const {
-//         if (ctx) {
-//             ssl_ctx_free(ctx); // The cleanup function for SSL*
-//         }
-//     }
-// };
-
-// // Define a unique_ptr type alias for convenience
-// using ssl_context_ptr = std::unique_ptr<SSL_CTX, ssl_context_deleter>;
-
-
-// struct ssl_deleter {
-//     void operator()(SSL* ssl) const {
-//         if (ssl) {
-//             SSL_free(ssl); // The cleanup function for SSL*
-//         }
-//     }
-// };
-
-// // Define a unique_ptr type alias for convenience
-// using SSL_ptr = std::unique_ptr<SSL, SSLDeleter>;
-
-// // void manageSslConnection() {
-// //     // ... create SSL object ...
-// //     SSL* raw_ssl = SSL_new(ssl_context);
-
-// //     // Use unique_ptr to manage it
-// //     SSL_ptr ssl_manager(raw_ssl); 
-
-// //     // When ssl_manager goes out of scope here, SSL_free(raw_ssl) is called automatically.
-// // }    
 
 
 
@@ -153,21 +121,70 @@ private:
 };
 
 
+#ifdef ACPP_BIO
+
+template<typename Stream>
+class acpp_bio {
+
+public:    
+    template<typename Chain>
+    acpp_bio(Chain& chain, Stream& st);
+
+    template<typename Chain>
+    static int write(BIO *b, const char *in, int inl);
+
+    // Called when OpenSSL needs ENCRYPTED data from the wire to decrypt it
+    static int read(BIO *b, char *out, int outl);
+
+    // Handles state changes and configuration inquiries from OpenSSL
+    static long ctrl(BIO *b, int cmd, long num, void *ptr);
+
+
+    // Lifecycle allocation
+    static int create(BIO *b);
+
+    // Lifecycle cleanup
+    static int destroy(BIO *b);
+
+
+
+    char* in_buf_;
+    size_t in_size_;
+    BIO* bio_;
+
+private:
+    template<typename Chain>
+    struct resources{
+        resources();
+        ~resources();
+        BIO_METHOD *create_method(int my_unique_type_id);
+        const int type_id;
+        BIO_METHOD* bio_method;
+
+    };
+    Stream& stream_;
+};
+
+#endif ACPP_BIO
+
+
+
+
 template<typename Next = acpp::network::async::null_layer>
 class stream  {
 public:
-
     enum {it = Next::it+1,};  
     using next_type = Next;
     using chain_type = async::append_to_tuple_t<typename next_type::chain_type, stream* >;
     using last_type = next_type::last_type;
     enum class status  { closed, connecting, connected, peer_closing, closing};
 
-    [[deprecated]]
-    stream(side_t side);
-    //stream(acpp::network::async::io_context& io, side_t side);
-    template<typename Context> 
-    stream(Context& c);
+    //[[deprecated]]
+    template<typename Chain> 
+    stream(Chain& chain, side_t side);
+
+    template<typename Chain, typename Context> 
+    stream(Chain& chain, Context& c);
 
     virtual ~stream();
 
@@ -205,6 +222,7 @@ public:
     }
 
     Next& next() {return next_;}
+    SSL* handle() {return ssl_;}
 
 private:
     template<typename Chain>
@@ -213,20 +231,30 @@ private:
     template<typename Chain>
     void do_shutdown(const char* buf, size_t len);
 
+    template <typename Chain>
+    void ssl_to_next();
+
+    template <typename Chain>
+    int next_to_ssl(const char* buf, size_t len);
+
     side_t side_;
     //TODO: revise to make it const context instead
     std::shared_ptr<context> ctx_;
     status status_;
 
-    BIO *int_bio;
-    BIO *ext_bio;
     SSL *ssl_;
     std::string hostname_;
     Next next_;
     Next* next2_;
-
+#ifdef ACPP_BIO
+    acpp_bio<stream> custom_bio_;
+#else
+    BIO *int_bio;
+    BIO *ext_bio;
+#endif
 };
 
-//std::string to_string()
-    
+
+
 } //namespace acpp::network::ssl
+

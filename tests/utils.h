@@ -24,8 +24,8 @@ private:
     //std::chrono::steady_clock::time_point start_;
 };
 
-}
 
+}
 
 std::string random_string(size_t length,
                           const std::string& charset =

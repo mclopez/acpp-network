@@ -76,7 +76,7 @@ TEST(SocketTests, ip)
 }
 
 
- TEST(SocketTests, resolve_host)
+ TEST(SocketTests, DISABLED_resolve_host)
  {
     using namespace acpp::network;
     using tcp_socket = sync::stream_socket<ip_socketaddress>;

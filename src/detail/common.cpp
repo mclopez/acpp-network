@@ -14,6 +14,11 @@ void log_debug(const std::string& msg) {
     std::cout  << msg << std::endl;
 }
 
+void log_info(const std::string& msg) {
+    std::lock_guard<std::mutex> l(m);
+    std::cout  << msg << std::endl;
+}
+
 void log_error(const std::string& msg) {
     std::lock_guard<std::mutex> l(m);
     std::cout  << msg << std::endl;

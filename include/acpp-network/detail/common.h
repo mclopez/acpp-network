@@ -7,7 +7,10 @@
 #include <format>
 
 #define LOG_LEVEL_DEBUG 0
-#define LOG_LEVEL_ERROR 1
+
+#define LOG_LEVEL_INFO 1
+
+#define LOG_LEVEL_ERROR 2
 
 #define DEFAULT_LOG_LEVEL 0
 
@@ -21,6 +24,11 @@
 #define LOG_DEBUG(...)    {}
 #endif
 
+#if LOG_LEVEL <= LOG_LEVEL_INFO
+#define LOG_INFO(...)    acpp::network::log_info(std::format(__VA_ARGS__))
+#else
+#define LOG_INFO(...)    {}
+#endif
 
 #if LOG_LEVEL <= LOG_LEVEL_ERROR
 #define LOG_ERROR(...)    acpp::network::log_error(std::format(__VA_ARGS__))
@@ -33,6 +41,7 @@
 namespace acpp::network {
 
 void log_debug(const std::string& msg);
+void log_info(const std::string& msg);
 void log_error(const std::string& msg);
 
 template <typename Writer>

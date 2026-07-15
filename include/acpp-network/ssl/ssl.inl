@@ -13,6 +13,10 @@
 
 namespace acpp::network::ssl {
 
+/*
+./build.sh && ./build/Release/tests/acpp-network-tests --gtest_filter=-StreamTests.ssl_stream_test1:StreamTests.ssl_stream_test2:StreamTests.socket_stream_test1:StreamTests.socket_stream_test2
+
+*/ 
 
 #ifdef ACPP_BIO
 
@@ -170,7 +174,7 @@ acpp_bio<Stream>::acpp_bio(Chain& chain, Stream& st):stream_(st), in_size_(0), i
 
 //end custom bio
 
-#endif ACPP_BIO
+#endif // ACPP_BIO
 
 
 
@@ -180,13 +184,13 @@ using buffer = std::array<char, 1024*20>; //ojo!!
 template<typename Next>
 template<typename Chain> 
 stream<Next>::stream(Chain& chain, side_t side)
-:side_(side), next_(chain, side), ctx_(std::make_shared<context>(side)), status_(status::closed)
+:side_(side), /*next_(chain, side),*/ ctx_(std::make_shared<context>(side)), status_(status::closed)
 #ifdef ACPP_BIO
 , custom_bio_(chain, *this)
 #endif
 {
     LOG_DEBUG("ssl::stream<Next>::stream side: {} status: {}", (int)side_, (int)status_); 
-    next_.prev_ = this;
+    //next_.prev_ = this;
 
     if (side == side_t::server) {
         auto c = x509::create_self_signed_cert(x509::Name().cn("xxx").l("l").o("o").st("st"));
@@ -223,15 +227,15 @@ stream<Next>::stream(Chain& chain, side_t side)
 
 template<typename Next>
 template<typename Chain, typename Context> 
-stream<Next>::stream(Chain& chain, Context& c)
-:side_(c.side()), next_(chain, c), ctx_(c.ctx()), status_(status::closed)
+stream<Next>::stream(Chain& chain, Context& ctx)
+:base_type(chain, ctx), side_(ctx.side()), ctx_(ctx.ctx()), status_(status::closed)
 #ifdef ACPP_BIO
 , custom_bio_(chain, *this)
 #endif
 
 {
     LOG_DEBUG("ssl::stream<Next>::stream side: {} status: {}", (int)side_, (int)status_); 
-    next_.prev_ = this;
+    //next_.prev_ = this;
 
     ssl_ = SSL_new(ctx_->handle());
 #ifdef ACPP_BIO
@@ -297,24 +301,24 @@ x509 stream<Next>::peer_cert() {
 
 template<typename Next>
 template<typename Chain>
-void stream<Next>::connect() {  
-    next_.template connect<Chain>();
+void stream<Next>::connect(Chain& chain) {  
+    this->next_.connect(chain);
 }
 
 
 //on prior connected
 template<typename Next>
 template <typename Chain>
-void stream<Next>::on_connected() { 
+void stream<Next>::on_connected(Chain& chain) { 
     LOG_DEBUG("ssl::stream::on_connected status:{} ctx_.type():{}", (int)status_, (int)side_);
     if (side_ == side_t::client) {
-        do_connect<Chain>(nullptr, 0);
+        do_connect(chain, nullptr, 0);
     }
 }
 
 template<typename Next>
 template <typename Chain>
-void stream<Next>::do_connect(const char* buf, size_t len) {
+void stream<Next>::do_connect(Chain& chain, const char* buf, size_t len) {
     LOG_DEBUG("ssl::stream::do_connect side: {} status: {} len: {}", (int)side_, (int)status_, len);
     //acpp::network::timer t("ssl do_connect");
     int e;
@@ -326,7 +330,7 @@ void stream<Next>::do_connect(const char* buf, size_t len) {
         // } else {
         //     LOG_DEBUG("ssl::stream::do_connect  side: {} BIO_write e:{} len: {}", (int)side_, e, len); 
         // }
-        next_to_ssl<Chain>(buf, len);
+        next_to_ssl(chain, buf, len);
 
     }
     if (status_ == status::closed || status_ == status::connecting) {
@@ -391,15 +395,13 @@ void stream<Next>::do_connect(const char* buf, size_t len) {
         status_ = status::connected;
     }
     
-    auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
 
-    if(status_ == status::connected && prior) {
-        //TODO: send to queue instead?
-        prior->template on_connected<Chain>();
+    if(status_ == status::connected) {
+        this->prev(chain).on_connected(chain);
     }
 
 
-    ssl_to_next<Chain>();
+    ssl_to_next(chain);
 
 
     {
@@ -407,7 +409,7 @@ void stream<Next>::do_connect(const char* buf, size_t len) {
         int n;
         //acpp::network::timer t("ssl do_connect BIO_read (2)");
         while(n= SSL_read(ssl_, b.data(), b.size()), n > 0) {
-            prior->template on_received<Chain>(b.data(), n);
+            this->prev(chain).on_received(chain, b.data(), n);
         }
     }
 }
@@ -417,27 +419,28 @@ void stream<Next>::do_connect(const char* buf, size_t len) {
 //on prior connected
 template<typename Next>
 template <typename Chain>
-void stream<Next>::on_disconnected() { 
+void stream<Next>::on_disconnected(Chain& chain) { 
     LOG_DEBUG("ssl::stream::on_disconnected status:{} ctx_.type():{}", (int)status_, (int)side_);
     //already disconnected
-    auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
-    if (prior)
-        prior->template on_disconnected<Chain>();
-
+    // auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
+    // if (prior)
+    //     prior->template on_disconnected<Chain>();
+    this->prev(chain).on_disconnected(chain);
 }
 
 
 template<typename Next>
 template<typename Chain>
-void stream<Next>::do_shutdown(const char* buf, size_t len) {
+void stream<Next>::do_shutdown(Chain& chain, const char* buf, size_t len) {
     LOG_DEBUG("ssl::stream::do_shutdown status_: {} len: {}", (int)status_, len); 
-    auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
+    //auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
+    auto& prior = this->prev(chain);
 
     int e;
     if (len) {
         // e = BIO_write(ext_bio, buf, len);
         // LOG_DEBUG("ssl::stream::do_shutdown BIO_write e: {} len: {}", e, len); 
-        next_to_ssl<Chain>(buf, len);
+        next_to_ssl(chain, buf, len);
 
     }
     if (status_ == status::closing) {
@@ -473,14 +476,13 @@ void stream<Next>::do_shutdown(const char* buf, size_t len) {
     // while (n = ::BIO_read(ext_bio, b.data(), b.size()), n > 0) {
     //     next_.template write<Chain>(b.data(), n);
     // }
-    ssl_to_next<Chain>();
+    ssl_to_next(chain);
 
-    if(status_ == status::closed && prior) 
-        prior->template on_disconnected<Chain>();
+    if(status_ == status::closed) 
+        this->prev(chain).on_disconnected(chain);
 
     while(n= SSL_read(ssl_, b.data(), b.size()), n > 0) {
-        if (prior)
-            prior->template on_received<Chain>(b.data(), n);
+        this->prev(chain).on_received(chain, b.data(), n);
     }
     int ssls = SSL_get_shutdown(ssl_);
     LOG_DEBUG("ssl::stream::do_shutdown ssls(2): {}", ssls);
@@ -489,11 +491,11 @@ void stream<Next>::do_shutdown(const char* buf, size_t len) {
 
 template<typename Next>
 template<typename Chain>
-void stream<Next>::disconnect() {
+void stream<Next>::disconnect(Chain& chain) {
     LOG_DEBUG("ssl::stream::disconnect begin");
     if (status_ == status::connected) {
         status_ = status::closing;
-        do_shutdown<Chain>(nullptr, 0);
+        do_shutdown(chain, nullptr, 0);
     } else {
         LOG_ERROR("ssl::stream::disconnect: invalid state");
         //throw Exception(message);
@@ -502,22 +504,22 @@ void stream<Next>::disconnect() {
 
 template<typename Next>
 template<typename Chain>
-void stream<Next>::on_received(const char* buf, size_t len)  {
+void stream<Next>::on_received(Chain& chain, const char* buf, size_t len)  {
     //acpp::network::timer t; t.start("ssl on_received");
 
     LOG_DEBUG("ssl::stream::on_received(1) side: {} len: {} status_: {} ", (int)side_, len, (int)status_);
     if (status_ == status::closed || status_ == status::connecting ) {
-        do_connect<Chain>(buf, len);
+        do_connect(chain, buf, len);
         return; 
     }
     if (status_ == status::closing) {
-        do_shutdown<Chain>(buf, len);
+        do_shutdown(chain, buf, len);
         return; 
     }
 
     if (status_ == status::connected) 
     {
-        auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
+        //auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
         //const char* hostname = SSL_get_servername(ssl_, TLSEXT_NAMETYPE_host_name);
 
         int n = 0;
@@ -525,13 +527,13 @@ void stream<Next>::on_received(const char* buf, size_t len)  {
         buffer b;
         while (tot_n < len) {
             //n = BIO_write(ext_bio, buf + tot_n, len - tot_n); 
-            n = next_to_ssl<Chain>(buf + tot_n, len - tot_n);
+            n = next_to_ssl(chain, buf + tot_n, len - tot_n);
             tot_n += n;
             LOG_DEBUG("*ssl::stream::on_received(2) BIO_write: n: {} len: {} tot_n: {}", n, len, tot_n);
 
             while(n = ::SSL_read(ssl_, b.data(), b.size()), n > 0) {
                 LOG_DEBUG("ssl::stream::on_received(3) SSL_read: {}", n);
-                    prior->template on_received<Chain>(b.data(), n);
+                    this->prev(chain).on_received(chain, b.data(), n);
             } 
             if (n <= 0) {
                 //SSL_get_error(ssl_, e) == SSL_ERROR_WANT_WRITE);
@@ -556,7 +558,7 @@ void stream<Next>::on_received(const char* buf, size_t len)  {
         //     LOG_DEBUG("ssl::stream::on_received(7) BIO_read (2): {}", n);
         //     next_.template write<Chain>(b.data(), n);
         // }
-        ssl_to_next<Chain>();
+        ssl_to_next(chain);
 
 //SSL_SENT_SHUTDOWN
 //SSL_RECEIVED_SHUTDOWN
@@ -568,7 +570,7 @@ void stream<Next>::on_received(const char* buf, size_t len)  {
 
 template<typename Next>
 template<typename Chain>
-size_t stream<Next>::write(const char* buf, size_t len)  {
+size_t stream<Next>::write(Chain& chain, const char* buf, size_t len)  {
     //acpp::network::timer t; t.start("ssl write");
     LOG_DEBUG("ssl::stream::write(1) len: {}", len);
     //auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
@@ -585,7 +587,7 @@ size_t stream<Next>::write(const char* buf, size_t len)  {
             else {
                 break;
             }
-            ssl_to_next<Chain>();
+            ssl_to_next(chain);
         }
 
     } else {
@@ -600,21 +602,21 @@ size_t stream<Next>::write(const char* buf, size_t len)  {
 
 template<typename Next>
 template <typename Chain>
-void stream<Next>::ssl_to_next() {
+void stream<Next>::ssl_to_next(Chain& chain) {
 #ifdef ACPP_BIO
     //nothing to do. the custom bio will write directly to next 
 #else
     buffer b;
     int n;
     while (n = ::BIO_read(ext_bio, b.data(), b.size()), n > 0) {
-        next_.template write<Chain>(b.data(), n); 
+        this->next_.write(chain, b.data(), n); 
     }
 #endif    
 }
 
 template<typename Next>
 template <typename Chain>
-int stream<Next>::next_to_ssl(const char* buf, size_t len) {
+int stream<Next>::next_to_ssl(Chain& chain, const char* buf, size_t len) {
 #ifdef ACPP_BIO
     LOG_DEBUG("next_to_ssl len: {}", len);
     custom_bio_.in_buf_ = (char*)buf;

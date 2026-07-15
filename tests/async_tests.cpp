@@ -92,14 +92,8 @@ TEST(AsyncSocketTests, simple_client_server)
         server_socket.bind(to_sockaddr(addr));
         server_socket.listen(5);
 
-        //auto res = server_socket.accept();
         io.wait_for_input();
 
-        //  char buffer[1024];
-        //  auto bytes_received = client_socket.receive(buffer, sizeof(buffer));
-        //  if (bytes_received > 0) {
-        //      client_socket.send(buffer, bytes_received); // Echo back
-        //  }
         EXPECT_EQ(sockets.size(), 0);
     };
 

@@ -165,18 +165,17 @@ private:
     Stream& stream_;
 };
 
-#endif ACPP_BIO
+#endif 
 
 
 
 
 template<typename Next = acpp::network::async::null_layer>
-class stream  {
+class stream: public async::layer_base<stream<Next>, Next >  {
 public:
-    enum {it = Next::it+1,};  
-    using next_type = Next;
-    using chain_type = async::append_to_tuple_t<typename next_type::chain_type, stream* >;
-    using last_type = next_type::last_type;
+
+    using base_type = async::layer_base<stream<Next>, Next >;
+
     enum class status  { closed, connecting, connected, peer_closing, closing};
 
     //[[deprecated]]
@@ -189,22 +188,22 @@ public:
     virtual ~stream();
 
     template<typename Chain>
-    void connect();
+    void connect(Chain& chain);
 
     template<typename Chain>
-    void on_received(const char* buf, size_t len);
+    void on_received(Chain& chain, const char* buf, size_t len);
 
     template<typename Chain>
-    size_t write(const char* buf, size_t len);
+    size_t write(Chain& chain, const char* buf, size_t len);
 
     template <typename Chain>
-    void on_connected();
+    void on_connected(Chain& chain);
 
     template <typename Chain>
-    void on_disconnected();
+    void on_disconnected(Chain& chain);
 
     template <typename Chain>
-    void disconnect();
+    void disconnect(Chain& chain);
  
     void set_cert(x509& x509);
     void set_pkey(pkey& pk);
@@ -214,28 +213,28 @@ public:
     void set_cert();
     void set_hostname(const std::string& hostname) { hostname_ = hostname;}
 
-    void* prev_;
 
     template <typename Chain>
-    auto last() {
-        return next_.template last<Chain>();
+    auto last(Chain& chain) {
+        std::get<base_type::it>(chain) = this;
+        return this->next_.last(chain);
     }
 
-    Next& next() {return next_;}
+    Next& next() {return this->next_;}
     SSL* handle() {return ssl_;}
 
 private:
     template<typename Chain>
-    void do_connect(const char* buf, size_t len);
+    void do_connect(Chain& chain, const char* buf, size_t len);
 
     template<typename Chain>
-    void do_shutdown(const char* buf, size_t len);
+    void do_shutdown(Chain& chain, const char* buf, size_t len);
 
     template <typename Chain>
-    void ssl_to_next();
+    void ssl_to_next(Chain& chain);
 
     template <typename Chain>
-    int next_to_ssl(const char* buf, size_t len);
+    int next_to_ssl(Chain& chain, const char* buf, size_t len);
 
     side_t side_;
     //TODO: revise to make it const context instead
@@ -244,8 +243,8 @@ private:
 
     SSL *ssl_;
     std::string hostname_;
-    Next next_;
-    Next* next2_;
+    //Next next_;
+    //Next* next2_;
 #ifdef ACPP_BIO
     acpp_bio<stream> custom_bio_;
 #else

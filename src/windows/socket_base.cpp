@@ -365,24 +365,6 @@ public:
         return l;
     }
 
-    // void send_pending() {
-    //     if (!pending_write_.empty()) {
-    //         auto n = internal_write(pending_write_.data(), pending_write_.size());
-    //         pending_write_.erase(pending_write_.begin(), pending_write_.begin() + n);
-    //     }
-    // }
-
-    // size_t write(const char* buffer, size_t len) {
-    //     if (write_op.in_use) {
-    //         pending_write_.insert(pending_write_.end(), buffer, buffer + len);
-    //         return 0;
-    //     }
-    //     auto n = internal_write(buffer, len);
-    //     if (n < len) {
-    //         pending_write_.insert(pending_write_.end(), buffer + n , buffer + len);
-    //     }
-    //     return 0;
-    // }
 
     size_t write(const char* buffer, size_t len) {
         if (write_op.in_use) {
@@ -582,35 +564,13 @@ struct io_context_pimpl {
         }
     }
 
-
-    // struct timer {
-    //     using timer_id_type = int;
-    //     int id;
-    //     HANDLE handle;
-    //     std::function<void()> callback;
-    //     io_context_pimpl* io;
-    // };
-
-    // timer::timer_id_type next_timer_id() {
-    //     static std::atomic<timer::timer_id_type> current_timer_id;
-    //     return ++current_timer_id;
-    // }
-
-    // std::unordered_map<timer::timer_id_type, timer> timers_;B
 };
 
 
 timer_impl::timer_impl(timer& parent, io_context& io, int milliseconds, timer::on_timeout_callback&& cb)
 :parent_(&parent), io_(&io), milliseconds_(milliseconds), cb_(std::move(cb)) {
 
-
-//        auto timer_id = next_timer_id();
-//        auto& timer = timers_[timer_id];
-//        timer.id = timer_id;
-//        timer.callback = std::move(f);
-//        timer.io = this;
-
-        CreateTimerQueueTimer(&handle_, NULL, on_timer, this, milliseconds_, 0, 0);
+    CreateTimerQueueTimer(&handle_, NULL, on_timer, this, milliseconds_, 0, 0);
 
 }
 

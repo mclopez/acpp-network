@@ -145,7 +145,7 @@ public:
     socket_base_pimpl(int domain, int type, int protocol, io_context& io, socket_callbacks&& callbacks)
     :socket_base_pimpl(domain, type, protocol, ::socket(domain, type, protocol), io, std::move(callbacks)){}
 
-    ~socket_base_pimpl(){
+    ~socket_base_pimpl() override {
         close();
     }
 
@@ -290,7 +290,7 @@ public:
 
     timer_impl(io_context& io, timer& parent, int milliseconds, timer::on_timeout_callback&& cb={});
 
-    ~timer_impl() {
+    ~timer_impl() override {
         cancel();
     }
 
@@ -328,7 +328,7 @@ void timer::cancel() {
 
 class exec_event_handler : public event_handler {
 public:
-    exec_event_handler(io_context_pimpl& io_pimpl);
+    explicit exec_event_handler(io_context_pimpl& io_pimpl);
 
     ~exec_event_handler() override{
         close(fd_);
@@ -367,7 +367,7 @@ public:
     exec_event_handler exec_handler_{*this};
     
 
-    io_context_pimpl(io_context& parent) 
+    explicit io_context_pimpl(io_context& parent) 
     : epollfd(epoll_create1(0)), parent_(&parent), run(false) {
         ;
         if (epollfd == -1) {

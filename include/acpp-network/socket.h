@@ -77,6 +77,8 @@ private:
 using tpc_socket = stream_socket<ip_socketaddress>;
 using udp_socket = datagram_socket<ip_socketaddress>;
 
+
+
 template<typename SocketAddress>
 using resolve_address_callback = std::function<void(SocketAddress& addr, bool& success)>;
 

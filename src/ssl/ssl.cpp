@@ -19,11 +19,13 @@ namespace acpp::network::ssl {
 
 struct File {
 
-    File(const std::string& file, const std::string& params = "r"){
+    explicit File(const std::string& file, const std::string& params = "r"){
         file_ = fopen((char*)file.c_str(), params.c_str());
         LOG_ERROR("sfile_: {}", (void*)file_);
     }
-
+    File(const File&) = delete;
+    void operator=(const File&) = delete;
+    
     ~File() { if (file_) fclose(file_); }
 
     FILE* file_ = nullptr;
@@ -327,29 +329,6 @@ context::~context() {
     }   
 }
 
-
-
-
-// #include <openssl/ssl.h>
-// #include <openssl/err.h>
-// #include <openssl/types.h>
-
-// #include <iostream>
-
-
-// #include <log.h>
-
-// #include "stream.h"
-// #include "impl.h"
-
-
-
-// struct stream::Impl {
-//     BIO *int_bio;
-//     BIO *ext_bio;
-//     SSL *ssl_;
-//     Impl():int_bio(nullptr), ext_bio(nullptr), ssl_(nullptr){}
-// };
 
 
 void context::set_cert(x509& cert) { 

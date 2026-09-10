@@ -374,8 +374,7 @@ struct io_context_pimpl {
     std::atomic_bool run_;
     int kq_;
     std::mutex exec_mutex_;
-    std::mutex timers_mutex_;
-    std::queue<std::function<void()>> pending_callbacks_; 
+    std::vector<std::function<void()>> pending_callbacks_; 
     constexpr static size_t callback_id = 1;
     
     io_context_pimpl() : run_(false), kq_(-1) {
@@ -395,7 +394,7 @@ struct io_context_pimpl {
     void exec(std::function<void()>&& f) {
         {
             std::lock_guard<std::mutex> lock(exec_mutex_);
-            pending_callbacks_.push(std::move(f));  
+            pending_callbacks_.push_back(std::move(f));  
         }
         struct kevent ev_set = {0};
         EV_SET(&ev_set, 1, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
@@ -509,14 +508,14 @@ struct io_context_pimpl {
                         }
                     }
                 } else if (events[i].filter == EVFILT_USER) {
-                    std::queue<std::function<void()>> tasks;
+                    std::vector<std::function<void()>> tasks;
                     {
                         std::lock_guard<std::mutex> lock(exec_mutex_);
                         std::swap(tasks, pending_callbacks_);
                     }
-                    while (!tasks.empty()) {
-                        tasks.front()();
-                        tasks.pop();
+                    for(auto& t: tasks) {
+                        if (t) 
+                            t();
                     }
                 } else if (events[i].filter == EVFILT_TIMER) {
                     LOG_DEBUG("io_context::wait_for_input EVFILT_TIMER");

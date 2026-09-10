@@ -24,7 +24,7 @@
 using in_port_t = decltype(sockaddr_in::sin_port);
 
 #else
-//TODO: remove shis headers
+//TODO: remove this headers
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/un.h>    // For sockaddr_un structure

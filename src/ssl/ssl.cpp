@@ -17,6 +17,16 @@
 
 namespace acpp::network::ssl {
 
+const std::error_category& error_category() noexcept {
+    static class error_category instance;
+    return instance;
+}
+
+std::error_code make_error_code(error e) {
+    return {static_cast<int>(e), error_category()};
+}
+
+
 struct File {
 
     explicit File(const std::string& file, const std::string& params = "r"){

@@ -8,6 +8,7 @@ target_sources(acpp-network
     stream.cpp
     ssl/ssl.cpp
     utils.cpp
+    errors.cpp
     $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/windows/socket_base.cpp>
     $<$<PLATFORM_ID:Darwin>:${CMAKE_CURRENT_SOURCE_DIR}/macos/socket_base.cpp>
     $<$<PLATFORM_ID:Linux>:${CMAKE_CURRENT_SOURCE_DIR}/linux/socket_base.cpp>

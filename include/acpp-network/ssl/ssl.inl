@@ -400,7 +400,6 @@ void stream<Next>::do_connect(Chain& chain, const char* buf, size_t len) {
         this->prev(chain).on_connected(chain);
     }
 
-
     ssl_to_next(chain);
 
 
@@ -570,7 +569,7 @@ void stream<Next>::on_received(Chain& chain, const char* buf, size_t len)  {
 
 template<typename Next>
 template<typename Chain>
-size_t stream<Next>::write(Chain& chain, const char* buf, size_t len)  {
+std::error_code stream<Next>::write(Chain& chain, const char* buf, size_t len)  {
     //acpp::network::timer t; t.start("ssl write");
     LOG_DEBUG("ssl::stream::write(1) len: {}", len);
     //auto prior = acpp::network::async::get_prev<Chain, it>(prev_);
@@ -587,30 +586,69 @@ size_t stream<Next>::write(Chain& chain, const char* buf, size_t len)  {
             else {
                 break;
             }
-            ssl_to_next(chain);
+            if (total_len == len) {
+                //last write
+                return ssl_to_next(chain);
+            } else {
+                auto err = ssl_to_next(chain);
+                if (err != acpp::network::error::success && err != acpp::network::error::data_pending) {
+                    return err;
+                }
+            }
         }
 
     } else {
-        LOG_DEBUG("ssl::stream::write_output invalid state");
-        //throw Exception("ssl::stream::write_output: invalid state");
+        LOG_ERROR("ssl::stream<>::write invalid state");
+//        throw Exception("ssl::stream<>::write: invalid state");
+        return make_error_code(error::invalid_state);
     }
-
-    return len;
 }
 
+/*
 
+option1: 
+callback on write method
+w +++++++ cb
+w ++++ ++++ ++++ cb
+                 ->cb(OK)
+w +++++++ cb
+w ++++ ++++ E ++++ cb
+            -> cb(E)
+
+option2: 
+send_ready generic callback, as in on_received_ 
+    to be send when pending data is 0
+    what happens when several sync writes from the same operation, the first is sync.
+errors reported in on_error callback
+    add a flag to know if the sync write produced an error to stop writing in loop? then wait for the error in generic cb
+    add a parameter to say you are interested in send_ready callback, ssl will set it in the last call
+
+what happens if we call serveral times write form the app?  forbiden or queue?    
+one solution to this: flag in the call, several write calls can set it, and when when send_ready is sent, the flag is cleared
+
+option3:
+all write operations are sychronous and return a error code/struct, layer and codes ssl error codes, abstractc error codes
+and also ok (all done), data_pending or error 
+so, when result = data_pending wait for send_ready callback to send data again
+std::optional for result and error codes?
+
+*/ 
 
 template<typename Next>
 template <typename Chain>
-void stream<Next>::ssl_to_next(Chain& chain) {
+std::error_code stream<Next>::ssl_to_next(Chain& chain) {
 #ifdef ACPP_BIO
     //nothing to do. the custom bio will write directly to next 
 #else
     buffer b;
     int n;
+    std::error_code result;
     while (n = ::BIO_read(ext_bio, b.data(), b.size()), n > 0) {
-        this->next_.write(chain, b.data(), n); 
+        result = this->next_.write(chain, b.data(), n); 
+        if (is_error(result)) 
+            return result;
     }
+    return result;
 #endif    
 }
 

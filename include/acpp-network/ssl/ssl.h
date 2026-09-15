@@ -28,7 +28,31 @@ private:
     std::string msg_;
 };
 
+enum class error {
+    invalid_state = 0,
+    unknown = 3
+};
 
+class error_category : public std::error_category {
+public:
+    const char* name() const noexcept override {
+        return "acpp::network::ssl::error_category";
+    }
+
+    // Translates the numeric value into an explanatory string
+    std::string message(int ev) const override {
+        switch (static_cast<error>(ev)) {
+            case error::invalid_state: return "invalid_state";
+            case error::unknown: return "unknown";
+            default:                       
+                return "Unknown acpp network error";
+        }
+    }
+};
+
+const std::error_category& error_category() noexcept;
+
+std::error_code make_error_code(error e);
 
 #define PARAM(name) std::string name##_; \
                     Name& name(const std::string& v) { name##_ = v; return *this;} \
@@ -194,7 +218,7 @@ public:
     void on_received(Chain& chain, const char* buf, size_t len);
 
     template<typename Chain>
-    size_t write(Chain& chain, const char* buf, size_t len);
+    std::error_code write(Chain& chain, const char* buf, size_t len);
 
     template <typename Chain>
     void on_connected(Chain& chain);
@@ -231,7 +255,7 @@ private:
     void do_shutdown(Chain& chain, const char* buf, size_t len);
 
     template <typename Chain>
-    void ssl_to_next(Chain& chain);
+    std::error_code ssl_to_next(Chain& chain);
 
     template <typename Chain>
     int next_to_ssl(Chain& chain, const char* buf, size_t len);

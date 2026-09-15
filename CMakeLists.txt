@@ -13,7 +13,7 @@ find_package(spdlog REQUIRED)
 find_package(OpenSSL REQUIRED)
 
 
-
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_subdirectory(src)
 

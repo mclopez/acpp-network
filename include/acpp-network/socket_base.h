@@ -40,6 +40,7 @@ using in_port_t = decltype(sockaddr_in::sin_port);
 #include <string_view>
 #include <string>
 
+#include <acpp-network/errors.h>
 
 
 namespace acpp::network {

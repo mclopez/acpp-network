@@ -133,7 +133,7 @@ public:
     }
 
     template<typename Chain> 
-    size_t write(Chain& chain, const char* buf, size_t size) {
+    std::error_code write(Chain& chain, const char* buf, size_t size) {
         // if (other_) {
         //     other_->template on_received<Chain>(buf, size);
         // }
@@ -141,7 +141,7 @@ public:
         if (on_write_cb_) {
             on_write_cb_(buf, size);
         }
-        return size;
+        return make_error_code(::acpp::network::error::success);
     }
 
     void on_received(const char* buf, size_t size) {
@@ -700,3 +700,92 @@ TEST(StreamTests, experimental)
     //std::cout << get_prev<layer_t::chain_type, 10>(layer_chain.chain_) << std::endl;
 
 }
+
+/*
+class category_base {
+
+};
+
+class category1: public category_base {
+public:
+    static const category1& get(){
+        static category1 cat;
+        return cat;
+    }
+};
+
+class category2: public category_base {
+public:
+    static const category2& get(){
+        static category2 cat;
+        return cat;
+    }
+};
+
+enum class err1: u_int {ok, partial, error};
+
+enum class err2: u_int {ok, partial, error};
+
+
+class error_code {
+public:
+    int error_code_;
+    const category_base* category_;    
+};
+
+error_code make_error(err1 err) {
+    return error_code((u_int)err, &category1::get());
+}
+
+error_code make_error(err2 err) {
+    return error_code((u_int)err, &category2::get());
+}
+
+template <typename Enum>
+bool operator==(const error_code& e1, Enum e2) {
+    auto err2 = make_error(e2);
+    if (e1.category_ != err2.category_)
+        return false;
+    return (e1.error_code_ == err2.error_code_);
+}
+
+
+TEST(StreamTests, experimental2)
+{
+    //my_error e1;
+    //enum class error_code : u_int {ok, pending, error};
+    
+    error_code err1 = make_error(err1::ok);
+
+    if (err1 == err1::ok){
+        LOG_DEBUG("1.1.ok true");
+    }
+    if (err1 == err2::ok){
+        LOG_DEBUG("1.2.ok true");
+    }
+
+    error_code err2 = make_error(err2::ok);
+
+    if (err2 == err2::ok){
+        LOG_DEBUG("2.1.ok true");
+    }
+    if (err2 == err2::partial){
+        LOG_DEBUG("2.2.ok true");
+    }
+
+
+}
+*/
+
+
+
+
+// TEST(StreamTests, experimental3)
+// {
+//     // Implicit conversion happens automatically via make_error_code
+//     std::error_code ec = error::success;
+
+//     std::cout << "Category: " << ec.category().name() << "\n";
+//     std::cout << "Value:    " << ec.value() << "\n";
+//     std::cout << "Message:  " << ec.message() << "\n";
+// }

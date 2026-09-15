@@ -2,6 +2,7 @@
 
 //#include <cstdio>
 
+#include <acpp-network/errors.h>
 #include <acpp-network/address.h>
 #include <acpp-network/socket_base.h>
 #include <acpp-network/detail/common.h>
@@ -46,6 +47,7 @@ auto& get_prev(Chain& chain) {
     }        
 }
 
+//using write_callback = std::function<void (size_t written, int error_code)>;
 
 
 template <typename Layer, typename Next = null_layer>
@@ -134,7 +136,7 @@ public:
         }
     }
 
-    size_t write(const char* buf, size_t s) { 
+    std::error_code write(const char* buf, size_t s) { 
         LOG_DEBUG("stream::write side: {} msg: {}", (int)side_, std::string(buf, s));
         return this->next_.write(chain_, buf, s);
     }
@@ -289,14 +291,20 @@ public:
     }
     
     template<typename Chain> 
-    size_t write(Chain& chain, const char* buf, size_t size) {
+    std::error_code write(Chain& chain, const char* buf, size_t size) {
         LOG_DEBUG("socket_stream.write side: {} size: {}", (int)side_, size);
         auto n = socket_.write(buf, size);
-        if (n < size) {
+        if (n == size) {
+            // all data written
+            return make_error_code(error::success);
+
+        } else if (n < size) {
             //TODO: find better way
             pending_data_.insert(pending_data_.end(), buf, buf + size);
+            return make_error_code(error::data_pending);
+        } else if (n < 0 ) {
+            return make_error_code(error::system_error);
         }
-        return size;
     }
 
     template<typename Chain> 

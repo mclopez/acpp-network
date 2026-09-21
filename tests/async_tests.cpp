@@ -137,7 +137,7 @@ TEST(AsyncSocketTests, simple_client_server)
                 .on_sent = [](async::async_socket_base& s, size_t length) {
                     LOG_DEBUG("CLIENT Socket sent from AsyncSocketTests.first");
                 },
-                .on_error = [](async::async_socket_base& s, int error_code, const std::string& msg, const std::string& hint) {
+                .on_error = [](async::async_socket_base& s, const std::error_code& e, const std::string& hint) {
                     LOG_DEBUG("CLIENT Socket error from AsyncSocketTests.first error_code: {} msg: {} hint: {}", error_code, msg, hint);
                 }
             });
@@ -299,8 +299,8 @@ TEST(AsyncSocketTests, large_write_client_server)
                     auto n = s.write(large_message.c_str() + total_sent, large_message.size() - total_sent);
                     total_sent = total_sent + n;
                 },
-                .on_error = [](async::async_socket_base& s, int error_code, const std::string& msg, const std::string& hint) {
-                    LOG_DEBUG("CLIENT Socket error from AsyncSocketTests.first error_code: {} msg: {} hing: {}", error_code, msg, hint );
+                .on_error = [](async::async_socket_base& s, const std::error_code& ec, const std::string& hint) {
+                    LOG_DEBUG("CLIENT Socket error from AsyncSocketTests.first error_code: {} msg: {} hing: {}", ec, ec.message(), hint );
                 }
             });
 

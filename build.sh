@@ -8,4 +8,4 @@
 
 #cmake --build ./build/  --config Release -v --parallel
 
-conan build conanfile.py --build=missing -s build_type=Release -o log_level=0 -o acpp_bio=False
+conan build conanfile.py --build=missing -s build_type=Release -o log_level=1 -o acpp_bio=False

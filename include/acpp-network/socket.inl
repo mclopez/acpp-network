@@ -28,7 +28,11 @@ bool stream_socket<Address, Protocol>::connect(const address_type& adr) {
 
 template<typename Address, int Protocol>
 size_t stream_socket<Address, Protocol>::send(const char* data, size_t len) {
-    return ::send(socket_.fd(), data, len, 0);
+    LOG_ERROR("stream_socket<Address, Protocol>::send");
+    LOG_ERROR("stream_socket<Address, Protocol>::send fd: {}", socket_.fd());
+    auto n = ::send(socket_.fd(), data, len, 0);
+    LOG_ERROR("stream_socket<Address, Protocol>::send fd: {} n: {}", socket_.fd(), n);
+    return n;
 }
 
 template<typename Address, int Protocol>

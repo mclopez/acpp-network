@@ -492,7 +492,7 @@ size_t socket_base_pimpl::so_write_internal(const char* buffer, size_t len) {
         }
         log_error_func("send");
         if (callbacks_.on_error) {
-            callbacks_.on_error(*parent_, errno, strerror(errno), "send");
+            callbacks_.on_error(*parent_, last_error(), "send");
         }
         //error nothing send
         return 0;
@@ -531,7 +531,7 @@ void socket_base_pimpl::handle_event(uint32_t events)  {
             } else {
                 LOG_DEBUG("Connect failed: {}", strerror(err));
                 if (callbacks_.on_error) {
-                    callbacks_.on_error(*(parent_), errno, strerror(errno), "getsockopt");
+                    callbacks_.on_error(*(parent_), last_error(), "getsockopt");
                 }
             }
         } else {
@@ -549,7 +549,7 @@ void socket_base_pimpl::handle_event(uint32_t events)  {
             if (new_fd == -1) {
                 log_error_func("accept");
                 if (callbacks_.on_error) {
-                    callbacks_.on_error(*parent_, errno, strerror(errno), "accept");
+                    callbacks_.on_error(*parent_, last_error(), "accept");
                 }
             } else {
                 LOG_DEBUG("New connection accepted, fd: {}", new_fd);
@@ -570,7 +570,7 @@ void socket_base_pimpl::handle_event(uint32_t events)  {
             } else {
                 log_error_func("recv");
                 if (callbacks_.on_error) {
-                    callbacks_.on_error(*(parent_), errno, strerror(errno), "recv");
+                    callbacks_.on_error(*(parent_), last_error(), "recv");
                 }
             }
         }

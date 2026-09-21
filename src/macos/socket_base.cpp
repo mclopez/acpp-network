@@ -23,7 +23,7 @@ namespace acpp::network {
 void log_error_func(const std::string& func) {
     std::string error;
     error = strerror(errno);    
-    log_error(std::format("[POSIX] Error in {}: {}", func, error));
+    LOG_ERROR("[POSIX] Error in {}: {}", func, error);
 }
 
 
@@ -242,7 +242,7 @@ size_t so_write_internal(const char* buffer, size_t len) {
         }
         log_error_func("send");
         if (callbacks_.on_error) {
-            callbacks_.on_error(*parent_, errno, strerror(errno), "send");
+            callbacks_.on_error(*parent_, make_error_code(error::unknown), "send");
         }
         //error nothing send
         return 0;
@@ -428,7 +428,7 @@ struct io_context_pimpl {
                         if (new_fd == -1) {
                             log_error_func("accept");
                             if (data->callbacks_.on_error) {
-                                data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "accept");
+                                data->callbacks_.on_error(*(data->parent_), last_error(), "accept");
                             }
                         } else {
                             LOG_DEBUG("New connection accepted, fd: {}", new_fd);
@@ -471,7 +471,7 @@ struct io_context_pimpl {
                                 }
                                 log_error_func("recv");
                                 if (data->callbacks_.on_error) {
-                                    data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "recv");
+                                    data->callbacks_.on_error(*(data->parent_), last_error(), "recv");
                                 }
                                 break;
                             }
@@ -498,7 +498,7 @@ struct io_context_pimpl {
                         } else {
                             LOG_ERROR("❌ Connect failed: {}", strerror(err));
                             if (data->callbacks_.on_error) {
-                                data->callbacks_.on_error(*(data->parent_), errno, strerror(errno), "getsockopt");
+                                data->callbacks_.on_error(*(data->parent_), last_error(), "getsockopt");
                             }
                         }
                     } else {

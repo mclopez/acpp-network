@@ -47,4 +47,4 @@ std::error_code last_error() noexcept;
 
 // 5. Register your enum with the std library trait (crucial for implicit conversions)
 template <>
-struct ::std::is_error_code_enum<acpp::network::error> : true_type {};
+struct std::is_error_code_enum<acpp::network::error> : true_type {};

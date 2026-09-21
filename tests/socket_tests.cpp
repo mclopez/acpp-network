@@ -150,3 +150,18 @@ TEST(SocketTests, udp_echo)
 }
 
 
+
+TEST(SocketTests, DISABLED_error_test1)
+{
+    using namespace acpp::network;
+    sync::stream_socket<ip_socketaddress> socket;
+    ip_socketaddress adr = ip4_sockaddress("127.0.0.1", 9999);
+    LOG_ERROR("SocketTests.error_test1 1");
+    auto n = socket.connect(adr);
+    LOG_ERROR("SocketTests.error_test1 2 n: {}", n);
+    std::string msg = "Hello, Echo Server!";
+    LOG_ERROR("SocketTests.error_test1 3");
+    socket.send(msg.data(), msg.size());    
+    LOG_ERROR("SocketTests.error_test1 4");
+    std::this_thread::sleep_for(std::chrono::milliseconds(10000));
+}

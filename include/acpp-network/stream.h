@@ -305,6 +305,7 @@ public:
         } else if (n < 0 ) {
             return make_error_code(error::system_error);
         }
+        return make_error_code(error::unknown);
     }
 
     template<typename Chain> 

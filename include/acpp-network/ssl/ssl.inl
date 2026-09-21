@@ -602,6 +602,7 @@ std::error_code stream<Next>::write(Chain& chain, const char* buf, size_t len)  
 //        throw Exception("ssl::stream<>::write: invalid state");
         return make_error_code(error::invalid_state);
     }
+    return std::error_code();
 }
 
 /*

@@ -646,7 +646,7 @@ void io_context::wait_for_input() {
                     } else {
                         if (socket->callbacks_.on_error) {
                             //TODO: correct hint, read write, etc operation
-                            socket->callbacks_.on_error(*socket->parent_, err, "",  "TODO: put correct hint");
+                            socket->callbacks_.on_error(*socket->parent_, last_error(),  "TODO: put correct hint");
                         }
                     }
                 }
